@@ -1,0 +1,23 @@
+[Unit]
+Description=Hydroponics Control Server
+After=network.target mysql.service
+Requires=mysql.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/work/hydroponics4
+
+ExecStart=/home/pi/.venv/bin/python3 /home/pi/work/hydroponics4/app.py
+
+# 💡 追記：停止命令を出してから最長5秒で強制切断するセーフティ（指定がないと最大90秒間回り続けるリスクを排除）
+TimeoutStopSec=5
+
+Restart=always
+RestartSec=5
+
+Environment="PATH=/home/pi/.venv/bin"
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target
