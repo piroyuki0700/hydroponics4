@@ -5,9 +5,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from decimal import Decimal
-# 💡 OpenCVがEventletの協調ループをロックするのを防ぐための拡張モジュール
-import eventlet
-from eventlet import tpool
+import gevent
 
 from core.notifier import HydroNotifier
 
@@ -133,6 +131,7 @@ class HydroManager:
         self.manual_timer = None
         self.subpump_timer = None
         self.usb_reserve_timer = None
+        self.fertilized_today = False
 
         # 💡 CPU空冷ファンタスクの多重起動を防ぐための状態管理フラグ
         self.cpu_fan_task_running = False
@@ -235,7 +234,7 @@ class HydroManager:
             
             while self.cpu_fan_task_running:
                 # 1分(60秒)待機
-                eventlet.sleep(60.0)
+                gevent.sleep(60.0)
                 
                 # 💡 待機から目覚めた時、夜間突入によりフラグが下ろされていたら即終了
                 if not self.cpu_fan_task_running:
@@ -265,6 +264,14 @@ class HydroManager:
         self.socketio.start_background_task(_cpu_monitor_loop)
 
     def _set_next_sequence(self):
+        status = {}
+        report = self.db.get_latest_report()
+        if len(report):
+            status = self.evaluate(report)
+            self.device.update_led(status['total_status'])
+        else:
+            self.device.update_led('white')
+
         """現在時刻から次に実行すべき『分』と『関数』を計算してタイマーをセット"""
         now = datetime.now()
         m = now.minute
@@ -338,7 +345,9 @@ class HydroManager:
         picture_path_for_discord = None
         if now.hour in [int(h) for h in camera_hours if h is not None]:
             self.logger.info(f"Hourly camera schedule matched for {now.hour}:00. Capturing picture...")
-            cam_result = tpool.execute(self.camera.capture, False)
+            # gevent のスレッドプールを使って重いカメラ処理を実行（結果が返ってくるまで非同期で待つ）
+            tp = gevent.get_hub().threadpool
+            cam_result = tp.apply(self.camera.capture, (False,)) # 引数はタプルで渡します
             if cam_result.get('success'):
                 picture_no = self.db.insert_picture({
                     'filename': cam_result.get('filename'),
@@ -489,7 +498,7 @@ class HydroManager:
             def _leak_monitor_loop():
                 self.logger.info("Safety: Active-window Leak detection loop started.")
                 while True:
-                    eventlet.sleep(1.0)
+                    gevent.sleep(1.0)
                     
                     # 🔥 【即時アラート】日中の監視中に漏水を検知した場合
                     if self.device.leak_detect.is_active:
@@ -762,12 +771,11 @@ class HydroManager:
         # 💡 撮影からフロント通知までをすべて行うバックグラウンド処理を定義
         def _camera_capture_task():
             try:
-                self.logger.info("Background task: Starting camera capture via tpool...")
+                self.logger.info("Background task: Starting camera capture via threadpool...")
                 
-                # 1. ⚠️ OpenCVのブロッキングを防ぐため、tpool.executeを使って安全に撮影を実行
-                # （この数秒間、Web通信は1ミリも止まりません）
-                res = tpool.execute(self.camera.capture, True)
-                
+                # gevent のスレッドプールを使って重いカメラ処理を実行（結果が返ってくるまで非同期で待つ）
+                tp = gevent.get_hub().threadpool
+                res = tp.apply(self.camera.capture, (True,)) # 引数はタプルで渡します
                 success = bool(res.get('success'))
                 
                 # 2. 📸 撮影が終わったら、結果をイベント名 'tmp_picture' で一斉配信(broadcast)！
@@ -890,20 +898,56 @@ class HydroManager:
 
     def cmd_set_led(self, request):
         color = request.get('color')
+        self.device.update_led(color)
         return self.make_result(True, f"led is changed to {color}.")
 
     def cmd_measure_sensor(self, request):
         kind = request.get('sensor_kind')
+        
+        # 1. 温湿度 (BME280 / 今後SHT30に変える際もここを修正するだけ)
         if kind == 'temp_humid':
             values = self.sensors.read_bme280()
-            if values:
+            if values and 'air_temp' in values and 'humidity' in values:
                 return self.make_result(True, f"temperature {values.get('air_temp')} humidity {values.get('humidity')}")
             return self.make_result(False, "temperature/humidity sensor unavailable")
 
-        value = getattr(self.sensors, f"read_{kind}", lambda *args: None)() if kind != 'tds_level' else self.sensors.read_ec(self.sensors.read_water_temp())
-        if value is None:
-            return self.make_result(False, f"{kind} could not read.")
-        return self.make_result(True, f"{kind} = {value}")
+        # 2. 水温 (water_temp)
+        elif kind == 'water_temp':
+            value = self.sensors.read_water_temp()
+            if value is not None:
+                return self.make_result(True, f"water_temp = {value} C")
+
+        # 3. 濃度 (tds_level / EC)
+        elif kind == 'tds_level':
+            # 濃度測定には水温補正が必要なため、まず水温を取得
+            water_temp = self.sensors.read_water_temp()
+            value = self.sensors.read_ec(water_temp)
+            if value is not None:
+                return self.make_result(True, f"tds_level = {value}")
+
+        # 4. 明るさ (brightness / 実際の関数名は read_lux)
+        elif kind == 'brightness':
+            value = self.sensors.read_lux()
+            if value is not None:
+                return self.make_result(True, f"brightness = {value} lux")
+
+        # 5. 水位 (water_level)
+        elif kind == 'water_level':
+            value = self.sensors.read_water_level()
+            if value is not None:
+                return self.make_result(True, f"water_level = {value}")
+
+        # 6. その他のセンサー (水圧 water_pressure など、将来用)
+        else:
+            # 登録外のセンサー、または関数名が一致するものはgetattrで安全にフォールバック
+            func = getattr(self.sensors, f"read_{kind}", None)
+            if func:
+                value = func()
+                if value is not None:
+                    return self.make_result(True, f"{kind} = {value}")
+
+        # すべての条件を通り抜けて値が取れなかった場合のエラー処理
+        return self.make_result(False, f"{kind} could not read or unknown sensor type.")
 
     # === 🔧 サブポンプ・自動補充コマンドハンドラ群 ===
 
@@ -916,10 +960,10 @@ class HydroManager:
 
         option = request.get('option')
         if option == 'must':
-            # 'must' オプション：上限に達していない限り補充
+            # 'must' オプション：上限スイッチが感知（満水ではない）場合に補充
             perform_refill = not self.device.float_main_top.is_active
         else:
-            # 通常：下限スイッチが感知（水切れ状態）している場合に補充
+            # 通常：下限スイッチが感知（水切れしている）場合に補充
             perform_refill = not self.device.float_main_bottom.is_active
 
         if perform_refill:
@@ -1020,7 +1064,7 @@ class HydroManager:
                         
                         # 💡 いずれかのポンプが動いている、かつ最大時間を超えるまでループ
                         while (self.device.fert_pump_1.is_active or self.device.fert_pump_3.is_active) and (time.time() - start_p1 < max_p1 + 2):
-                            eventlet.sleep(0.5) # 💡 少し細かめにチェック（道を譲る）
+                            gevent.sleep(0.5) # 💡 少し細かめにチェック（道を譲る）
                             check_system_alive()
                             
                             elapsed = time.time() - start_p1 # 実際に経過した秒数
@@ -1039,7 +1083,7 @@ class HydroManager:
                         self.device.fert_pump_3.off()
                         
                         # 結晶化防止のために少し待機（必要に応じて数秒sleepを挟んでください）
-                        eventlet.sleep(1.0)
+                        gevent.sleep(1.0)
                         check_system_alive()
 
                         # ==================== Phase 2 ====================
@@ -1051,7 +1095,7 @@ class HydroManager:
                         max_p2 = max(f2_sec, f4_sec)
                         
                         while (self.device.fert_pump_2.is_active or self.device.fert_pump_4.is_active) and (time.time() - start_p2 < max_p2 + 2):
-                            eventlet.sleep(0.5)
+                            gevent.sleep(0.5)
                             check_system_alive()
                             
                             elapsed = time.time() - start_p2
@@ -1079,7 +1123,7 @@ class HydroManager:
 
             while self.device.ssr_sub_pump.is_active:
                 # 💡 ここで1秒間、他のWeb通信へ道を譲ります（フリーズしません）
-                eventlet.sleep(1.0)
+                gevent.sleep(1.0)
                 
                 # A) メインタンクの上限フロートスイッチ判定
                 if self.device.float_main_top.is_active:
@@ -1153,12 +1197,14 @@ class HydroManager:
         return self.make_result(True, "subpump status updated")
     
     def get_subpump_status(self):
-        """現在のサブポンプとフロートスイッチの状態を辞書で返す"""
+        """現在のサブポンプとフロートスイッチ、漏水検知、循環検知の状態を辞書で返す"""
         return {
             'subpump_on': self.device.ssr_sub_pump.is_active,
-            'refill_float_upper': self.device.float_main_top.is_active,
-            'refill_float_lower': self.device.float_main_bottom.is_active,
-            'refill_float_sub': self.device.float_sub.is_active,
+            'float_main_top': self.device.float_main_top.is_active,
+            'float_main_bottom': self.device.float_main_bottom.is_active,
+            'float_sub': self.device.float_sub.is_active,
+            'leak_detect': self.device.leak_detect.is_active,
+            'water_check': self.device.water_check.is_active,
             'refill_level': self.sensors.read_water_level()
         }
     
@@ -1174,13 +1220,13 @@ class HydroManager:
 
     def cmd_test_ssr1(self, request):
         control = request.get('option')
-        self.device.ssr_room_fan.on() if control == 'on' else self.device.ssr_room_fan.off()
-        return self.make_result(True, f"SSR circulator:{control}")
+        self.device.ssr_sub_pump.on() if control == 'on' else self.device.ssr_sub_pump.off()
+        return self.make_result(True, f"SSR ssr_sub_pump:{control}")
 
     def cmd_test_ssr2(self, request):
         control = request.get('option')
-        self.device.water_valve.on() if control == 'on' else self.device.water_valve.off()
-        return self.make_result(True, f"SSR nightly:{control}")
+        self.device.ssr_room_fan.on() if control == 'on' else self.device.ssr_room_fan.off()
+        return self.make_result(True, f"SSR ssr_room_fan:{control}")
 
     def cmd_debug_time_span(self, request):
         self.MINUTE_START = int(request.get('minute_start', self.MINUTE_START))

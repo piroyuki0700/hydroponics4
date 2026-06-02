@@ -552,18 +552,18 @@ function setValueRefillUpdate(data) {
     if (refillLevel) refillLevel.textContent = 'ー';
   }
 
-  // フロートスイッチ状態
-  const float_switchs = ['upper', 'lower', 'sub'];
-  for (const float_switch of float_switchs) {
-    if ('refill_float_' + float_switch in data) {
-      const iconFloat = $('#icon_float_' + float_switch);
-      if (iconFloat) {
-        if (data['refill_float_' + float_switch]) {
-          iconFloat.classList.remove('bi-x-circle', 'text-danger');
-          iconFloat.classList.add('bi-check-circle', 'text-success');
+  // フロートスイッチ、漏水検知、循環検知状態
+  const input_switchs = ['float_main_top', 'float_main_bottom', 'float_sub', 'leak_detect', 'water_check'];
+  for (const input_switch of input_switchs) {
+    if (input_switch in data) {
+      const iconSwitch = $('#icon_' + input_switch);
+      if (iconSwitch) {
+        if (data[input_switch]) {
+          iconSwitch.classList.remove('bi-x-circle', 'text-danger');
+          iconSwitch.classList.add('bi-check-circle', 'text-success');
         } else {
-          iconFloat.classList.remove('bi-check-circle', 'text-success');
-          iconFloat.classList.add('bi-x-circle', 'text-danger');
+          iconSwitch.classList.remove('bi-check-circle', 'text-success');
+          iconSwitch.classList.add('bi-x-circle', 'text-danger');
         }
       }
     }

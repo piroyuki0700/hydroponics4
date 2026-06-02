@@ -28,7 +28,7 @@ CREATE TABLE `setting_basic` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- 初期データ
-INSERT INTO `setting_basic` (`no`, `myname`, `memo`) VALUES (1, '水耕栽培2026年夏', '2026年夏の温室トマト栽培用データベース') ON DUPLICATE KEY UPDATE `no` = 1;
+INSERT INTO `setting_basic` (`no`, `myname`, `memo`) VALUES (1, '水耕2026年夏', '2026年夏の温室トマト栽培用データベース') ON DUPLICATE KEY UPDATE `no` = 1;
 
 -- スケジュール設定
 DROP TABLE IF EXISTS `setting_schedule`;

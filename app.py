@@ -1,9 +1,19 @@
+# app.py - メインエントリーポイント
+# ーーー 💡 geventパッチより前に、最優先で hardware.py を読み込ませる ーーー
+try:
+    # このインポートが走った瞬間に、hardware.py のトップレベル（if文の中）が実行され、
+    # lgpio や board などのすべての物理ライブラリが安全に先読み（キャッシュ）されます。
+    from core.hardware import load_hardware_libraries
+    load_hardware_libraries(silent=False)  # コンソールに先読み完了の案内を出します
+except Exception as e:
+    print(f"【初期警告】ハードウェアの先読みフェーズで例外が発生しました: {e}")
+
+# あとは安全にモンキーパッチを当てる
 import os
-import eventlet
-# VSCodeから渡された環境変数 'FLASK_DEBUG' が「ない」ときだけパッチを当てる
 if os.environ.get('FLASK_DEBUG') != 'true':
-    eventlet.monkey_patch()
-    print("[通常起動] eventlet のモンキーパッチを適用しました。")
+    from gevent import monkey
+    monkey.patch_all()
+    print("[通常起動] gevent のモンキーパッチを安全に適用しました。")
 else:
     print("[デバッグ起動] VSCodeデバッガを検出したため、パッチをスキップしました。")
 
@@ -48,12 +58,21 @@ app.config['SECRET_KEY'] = Config.SECRET_KEY
 
 if sys.gettrace() is not None:
     # VSCodeデバッガが動いている時は、衝突を避けるため
-    # eventletを明示的に「使用禁止（threadingモード）」にする
-    print("⚠️ VSCodeデバッガを検出: eventletを無効化し、標準スレッドモードで起動します。")
+    # 標準スレッドモードで起動する
+    print("⚠️ VSCodeデバッガを検出: パッチを無効化し、標準スレッドモードで起動します。")
     socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 else:
-    # 通常起動（ターミナルから python app.py などを叩いた時）はeventletで高速に動かす
-    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+    # 通常起動（ターミナルから python app.py などを叩いた時）は gevent で高速・軽量に動かす
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
+
+    # # ✅ 修正後：CORS（クロスドメイン接続）を完全に許可し、通信モードを安定させる
+    # socketio = SocketIO(
+    #     app, 
+    #     async_mode='gevent', 
+    #     cors_allowed_origins="*",  # Ubuntuからのアクセスを拒否させない
+    #     logger=True,               # サーバー側のコンソールにSocketIOの詳細ログを出す
+    #     engineio_logger=True       # 通信の裏側のエラーもすべてログに出す
+    # )
 
 # 3. 各マネージャーのインスタンス化 (Dependency Injection)
 db = HydroDB(Config)
@@ -102,7 +121,7 @@ if __name__ == '__main__':
     # 💡 systemctl stop (SIGTERM) を安全にキャッチする関数を定義
     def handle_sigterm(signum, frame):
         logger.info("SIGTERM received from systemd. Initiating graceful shutdown...")
-        # Eventletのループやサーバーを安全に止めるため、sys.exitを実行してfinally節へ落とす
+        # geventのループやサーバーを安全に止めるため、sys.exitを実行してfinally節へ落とす
         sys.exit(0)
 
     # 💡 信号の登録

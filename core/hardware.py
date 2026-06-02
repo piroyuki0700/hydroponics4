@@ -4,34 +4,55 @@ import random
 import time
 from datetime import datetime
 from gpiozero import OutputDevice, Button, Device
+import logging
 
 logger = logging.getLogger(__name__)
 
-def is_raspberry_pi():
-    """OSのシステム情報から、実行環境が本物のRaspberry Piかどうかを判定する"""
-    return os.path.exists('/proc/device-tree/model')
+# 💡 1. フラグと、Ubuntu（開発環境）用のダミーを定義
+IS_HARDWARE_OK = False
 
-# ==========================================
-# 🔌 ハードウェア依存ライブラリのインポート制御
-# ==========================================
-if is_raspberry_pi():
+class DummyW1ThermSensor:
+    pass
+
+# 💡 2. ラズパイ実機でのみ、実際のライブラリを一括インポート
+if os.path.exists("/proc/device-tree/model"):
     try:
+        # 先回りインポートで gevent との衝突（デッドロック）を完全に防ぎます
+        import lgpio
+        _ = lgpio.__name__  # VSCodeの「使われていないインポート警告」を消すためのハック
+        
         import board
         import busio
-        from w1thermsensor import W1ThermSensor
+        from w1thermsensor import W1ThermSensor, Sensor
         import adafruit_ads1x15.ads1115 as ADS
         from adafruit_ads1x15.analog_in import AnalogIn
-        import adafruit_bme280
+        from adafruit_bme280 import basic as adafruit_bme280
         import adafruit_veml7700
+        import neopixel
+        # この段階では logging の初期化前である可能性が高いため、確実に出る print を使用
+        print("Running on Raspberry Pi. Hardware libraries loaded successfully.")
         IS_HARDWARE_OK = True
+
     except Exception as e:
-        logger.error(f"Failed to load hardware libraries on Raspberry Pi: {e}")
+        print(f"Failed to load hardware libraries on Raspberry Pi: {e}")
         IS_HARDWARE_OK = False
+        W1ThermSensor = DummyW1ThermSensor
 else:
-    # Ubuntuなどの開発環境ではライブラリをロードしない
+    # Ubuntuなどの開発環境では実機ライブラリをロードせず、ダミーを割り当て
     IS_HARDWARE_OK = False
-    class W1ThermSensor: pass  # 型エラー防止用ダミー
-    logger.warning("Running on Non-Pi environment. Hardware libraries bypassed.")
+    W1ThermSensor = DummyW1ThermSensor
+
+
+# 💡 3. app.py の冒頭で呼び出すための案内用関数
+def load_hardware_libraries(silent=True):
+    """
+    app.pyの冒頭で gevent パッチ前に安全先読みさせるためのトリガー関数。
+    このファイルがロードされた時点でインポート自体は完了しているため、
+    呼び出されたときは進捗ログを表示するだけの役割になります。
+    """
+    if IS_HARDWARE_OK and not silent:
+        print("⚡ [Hardware] すべてのハードウェアライブラリを無傷で先読みしました。")
+    return IS_HARDWARE_OK
 
 
 # ==========================================
@@ -43,7 +64,8 @@ class HydroDevices:
         self._setup_factory()
         
         # --- 入力デバイス (外部プルダウン回路: 3.3V入力でActive) ---
-        input_params = {'pull_up': None, 'active_state': True}
+        input_ok_true = {'pull_up': None, 'active_state': True}
+        input_ok_false = {'pull_up': None, 'active_state': False}
 
         try:
             # --- 出力デバイス (OutputDevice) ---
@@ -61,13 +83,23 @@ class HydroDevices:
             self.water_valve  = OutputDevice(config.PIN_WATER_VALVE)
             
             # --- 入力ボタン (Button) ---
-            self.leak_detect       = Button(config.PIN_LEAK_DETECT, **input_params)
-            self.water_check       = Button(config.PIN_WATER_CHECK, **input_params)
-            self.float_main_top    = Button(config.PIN_FLOAT_MAIN_TOP, **input_params)
-            self.float_main_bottom = Button(config.PIN_FLOAT_MAIN_BOTTOM, **input_params)
-            self.float_sub         = Button(config.PIN_FLOAT_SUB, **input_params)
-            self.float_reserve     = Button(config.PIN_FLOAT_RESERVE, **input_params)
-            self.water_flow        = Button(config.PIN_WATER_FLOW, **input_params)
+            self.leak_detect       = Button(config.PIN_LEAK_DETECT, **input_ok_true)
+            self.water_check       = Button(config.PIN_WATER_CHECK, **input_ok_true)
+            self.float_main_top    = Button(config.PIN_FLOAT_MAIN_TOP, **input_ok_false)
+            self.float_main_bottom = Button(config.PIN_FLOAT_MAIN_BOTTOM, **input_ok_false)
+            self.float_sub         = Button(config.PIN_FLOAT_SUB, **input_ok_false)
+            self.float_reserve     = Button(config.PIN_FLOAT_RESERVE, **input_ok_false)
+            self.water_flow        = Button(config.PIN_WATER_FLOW, **input_ok_true)
+
+            # 初期化時に一度だけインスタンスを作る
+            # GPIO18なら board.D18 を指定。色の並びをGRB(標準)にするかRGBにするか指定可能
+            self.pixels = neopixel.NeoPixel(
+                board.D18, # self.config.PIN_LED_WS2812 が 18 なら board.D18 にマッピング
+                1, 
+                brightness=1.0, 
+                auto_write=True, 
+                pixel_order=neopixel.RGB
+            )
 
             logger.info(f"GPIO Devices initialized on {Device.pin_factory.__class__.__name__}")
         except Exception as e:
@@ -75,10 +107,13 @@ class HydroDevices:
         
     def _setup_factory(self):
         """UbuntuかRaspberry Piかを確実に判定してピン工場を切り替える"""
+        # ここで再度 import lgpio が走っても、上記(💡2)でキャッシュされた安全な
+        # モジュールが瞬時に再利用されるため、フリーズせずにスルーできます。
+        from gpiozero import Device
         if Device.pin_factory is not None:
             return
 
-        if is_raspberry_pi():
+        if os.path.exists("/proc/device-tree/model"):
             try:
                 import lgpio
                 logger.info("Raspberry Pi native GPIO factory established.")
@@ -86,7 +121,6 @@ class HydroDevices:
             except ImportError:
                 pass
 
-        # Ubuntuなどの開発環境（非ラズパイ）の場合のみ、明示的にMockFactoryを差し込む
         try:
             from gpiozero.pins.mock import MockFactory
             Device.pin_factory = MockFactory()
@@ -94,15 +128,45 @@ class HydroDevices:
         except Exception as e:
             logger.error(f"Failed to initialize MockFactory on development environment: {e}")
 
-
     def all_off(self):
         """緊急停止用：全ての OutputDevice を強制的にOFFにする"""
         for attr_name in dir(self):
             attr = getattr(self, attr_name)
             if isinstance(attr, OutputDevice):
                 attr.off()
+        self.update_led('off')  # LEDも消灯
         logger.warning("SAFETY: All OutputDevices have been turned OFF.")
 
+    # 状態表示LED更新
+    def update_led(self, color):
+        logger.debug(f"called. color={color}")
+        
+        # 色名とRGB(GRB)値のマッピング（辞書化してスッキリ）
+        # 標準的なGRB配列の場合の割り当て例：(G, R, B)
+        color_map = {
+            'blue':     (0, 0, 50),
+            'green':    (50, 0, 0),   # GRBチップならこれで緑になります
+            'success':  (50, 0, 0),
+            'yellow':   (32, 32, 0),
+            'warning':  (32, 32, 0),
+            'red':      (0, 50, 0),   # GRBチップならこれで赤になります
+            'danger':   (0, 50, 0),
+            'cyan':     (32, 0, 32),
+            'magenta':  (0, 32, 32),
+            'white':    (20, 20, 20),
+        }
+        
+        try:
+            # 辞書から色を取得。なければ消灯 (0,0,0)
+            target_color = color_map.get(color, (0, 0, 0))
+            
+            # 保持しておいたインスタンスの値を書き換えるだけ！
+            self.pixels[0] = target_color
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to update NeoPixel LED: {e}")
+            return False
 
 # ==========================================
 # 📊 HydroSensors クラス（旧 sensors.py）
@@ -151,7 +215,7 @@ class HydroSensors:
 
     def read_bme280(self):
         """💥 ラズパイ故障時はNone、Ubuntu開発時はデバッグ用ダミー値を返す"""
-        if not is_raspberry_pi():
+        if not IS_HARDWARE_OK:
             return {
                 "air_temp": round(random.uniform(18.0, 26.0), 1),
                 "humidity": round(random.uniform(50.0, 70.0), 1),
@@ -173,7 +237,7 @@ class HydroSensors:
 
     def read_water_temp(self):
         """💥 ラズパイ故障時はNone、Ubuntu開発時はデバッグ用ダミー値を返す"""
-        if not is_raspberry_pi():
+        if not IS_HARDWARE_OK:
             return round(random.uniform(17.0, 22.0), 1)
             
         if not self.w1_sensor: 
@@ -187,7 +251,7 @@ class HydroSensors:
 
     def read_ec(self, water_temp):
         """💥 ラズパイ故障時はNone、Ubuntu開発時はデバッグ用ダミー値を返す"""
-        if not is_raspberry_pi():
+        if not IS_HARDWARE_OK:
             return round(random.uniform(1.2, 2.4), 2)
             
         if not self.ads: 
@@ -213,7 +277,7 @@ class HydroSensors:
 
     def read_pressure_voltage(self):
         """水圧センサーの電圧測定（💡5回連続測定によるチャタリングノイズフィルタ搭載）"""
-        if not is_raspberry_pi():
+        if not IS_HARDWARE_OK:
             return round(random.uniform(1.5, 3.5), 3)
             
         if not self.ads: 
@@ -229,7 +293,9 @@ class HydroSensors:
                 time.sleep(0.01) # 10msの間隔をあけてサンプリング
                 
             avg_voltage = sum(voltages) / len(voltages)
-            return round(avg_voltage, 3)
+            rounded_voltage = round(avg_voltage, 3)
+            logger.info(f"Raw pressure voltage: {rounded_voltage} V")
+            return rounded_voltage
         except Exception as e:
             logger.error(f"Pressure sensor read error: {e}")
             return None
@@ -237,7 +303,7 @@ class HydroSensors:
 
     def read_lux(self):
         """💥 ラズパイ故障時はNone、Ubuntu開発時はデバッグ用ダミー値を返す"""
-        if not is_raspberry_pi():
+        if not IS_HARDWARE_OK:
             hour = datetime.now().hour
             return round(random.uniform(4000.0, 6000.0), 1) if 6 <= hour < 18 else round(random.uniform(0.0, 10.0), 1)
             
@@ -269,4 +335,4 @@ class HydroSensors:
         
         # 0%〜100%の範囲を絶対に飛び出さないようにクリッピング
         return round(max(0.0, min(100.0, level)), 1)
-    
+

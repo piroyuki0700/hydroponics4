@@ -356,9 +356,11 @@
                   <span class="small mb-1">■現在の状態</span>
                   <span class="border rounded p-1 bg-white small text-dark">水位 <i id="subpump_working" class="bi bi-arrow-repeat text-secondary"></i> <span id="refill_level"></span>％</span>
                 </div><div>
-                  <span class="border rounded p-1 bg-white small text-dark">メイン上 <i id="icon_float_upper" class="bi bi-check-circle text-success"></i></span>
-                  <span class="border rounded p-1 bg-white small text-dark">メイン下 <i id="icon_float_lower" class="bi bi-check-circle text-success"></i></span>
+                  <span class="border rounded p-1 bg-white small text-dark">メイン上 <i id="icon_float_main_top" class="bi bi-check-circle text-success"></i></span>
+                  <span class="border rounded p-1 bg-white small text-dark">メイン下 <i id="icon_float_main_bottom" class="bi bi-check-circle text-success"></i></span>
                   <span class="border rounded p-1 bg-white small text-dark">サブ<i id="icon_float_sub" class="bi bi-check-circle text-success"></i></span>
+                  <span class="border rounded p-1 bg-white small text-dark">漏水検知<i id="icon_leak_detect" class="bi bi-check-circle text-success"></i></span>
+                  <span class="border rounded p-1 bg-white small text-dark">循環検知<i id="icon_water_check" class="bi bi-check-circle text-success"></i></span>
                 </div>
               </div>
             </div>
@@ -536,10 +538,10 @@
         </div>
         <div class="mt-0">
           <span class="border_debug">
-            <span class="small">Circulator:</span>
+            <span class="small">SSR1(sub pump):</span>
             <button onclick="debugButtonExec('test_ssr1', 'on')" class="btn btn-secondary command_button">On</button>
             <button onclick="debugButtonExec('test_ssr1', 'off')" class="btn btn-secondary command_button">Off</button>
-            <span class="small ms-3">Night:</span>
+            <span class="small ms-3">SSR1(room fan):</span>
             <button onclick="debugButtonExec('test_ssr2', 'on')" class="btn btn-secondary command_button">On</button>
             <button onclick="debugButtonExec('test_ssr2', 'off')" class="btn btn-secondary command_button">Off</button> 
           </span>
