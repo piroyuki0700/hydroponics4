@@ -3,7 +3,7 @@ import os
 import random
 import time
 from datetime import datetime
-from gpiozero import OutputDevice, Button, Device
+from gpiozero import OutputDevice, PWMOutputDevice, Button, Device
 import logging
 
 logger = logging.getLogger(__name__)
@@ -79,8 +79,8 @@ class HydroDevices:
             self.fert_pump_2  = OutputDevice(config.PIN_FERT_PUMP_2)
             self.fert_pump_3  = OutputDevice(config.PIN_FERT_PUMP_3)
             self.fert_pump_4  = OutputDevice(config.PIN_FERT_PUMP_4)
-            self.cooling_fan  = OutputDevice(config.PIN_COOLING_FAN)
             self.water_valve  = OutputDevice(config.PIN_WATER_VALVE)
+            self.cooling_fan  = PWMOutputDevice(config.PIN_COOLING_FAN)
             
             # --- 入力ボタン (Button) ---
             self.leak_detect       = Button(config.PIN_LEAK_DETECT, **input_ok_true)

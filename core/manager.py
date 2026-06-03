@@ -108,8 +108,8 @@ class HydroManager:
     REFILL_CONFIRM_COUNT = 3
     
     # 💡 新機能用定数
-    FAN_TEMP_ON = 50.0            # 空冷ファンONの閾値(℃)
-    FAN_TEMP_OFF = 40.0           # 空冷ファンOFFの閾値(℃)
+    FAN_TEMP_ON = 40.0            # 空冷ファンONの閾値(℃)
+    FAN_TEMP_OFF = 38.0           # 空冷ファンOFFの閾値(℃)
     FLOW_LEAK_THRESHOLD = 10       # バルブ閉期間中の異常流水判定パルス数
     
     def __init__(self, config, db, device, sensors, camera, socketio):
@@ -188,14 +188,17 @@ class HydroManager:
         # --- 🚰 水道バルブの開閉判定 ---
         v_open = self.schedule.get('valve_open')
         v_close = self.schedule.get('valve_close')
+        self.logger.info(f"Valve schedule: open at {v_open}h, close at {v_close}h. Evaluating current valve status...") 
         if v_open is not None and v_close is not None:
             if int(v_open) <= now.hour < int(v_close):
                 if not self.device.leak_detect.is_active:
                     self.logger.info("Current time is within water window. Opening water valve.")
                     self.device.water_valve.on()
                 else:
+                    self.logger.critical("Leak detected at startup within water window! Keeping water valve CLOSED.")
                     self.device.water_valve.off()
             else:
+                self.logger.info("Current time is outside water window. Ensuring water valve is CLOSED.")
                 self.device.water_valve.off()
 
         # --- 💨 CPUファンの初期判定 ---
@@ -232,14 +235,7 @@ class HydroManager:
         def _cpu_monitor_loop():
             self.logger.info("CPU Monitor: Dynamic background loop started.")
             
-            while self.cpu_fan_task_running:
-                # 1分(60秒)待機
-                gevent.sleep(60.0)
-                
-                # 💡 待機から目覚めた時、夜間突入によりフラグが下ろされていたら即終了
-                if not self.cpu_fan_task_running:
-                    break
-                
+            while self.cpu_fan_task_running:                
                 # CPU温度を取得してヒステリシス制御
                 try:
                     with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
@@ -247,14 +243,18 @@ class HydroManager:
                 except Exception:
                     cpu_temp = 35.0 
                 
+                self.logger.info(f"CPU Monitor: Current CPU temperature: {cpu_temp:.1f}℃.")
                 if cpu_temp >= self.FAN_TEMP_ON:
                     if not self.device.cooling_fan.is_active:
                         self.logger.warning(f"CPU Temperature is high ({cpu_temp:.1f}℃). Turning ON cooling fan.")
-                        self.device.cooling_fan.on()
+                        self.device.cooling_fan.value = 0.5  # 50%のPWM出力でファンをON
                 elif cpu_temp <= self.FAN_TEMP_OFF:
                     if self.device.cooling_fan.is_active:
                         self.logger.info(f"CPU Temperature cooled down ({cpu_temp:.1f}℃). Turning OFF cooling fan.")
                         self.device.cooling_fan.off()
+
+                # 1分(60秒)待機
+                gevent.sleep(60.0)
 
             # ループを抜けたらファンを確実に止めてリソース解放
             self.device.cooling_fan.off()
@@ -699,6 +699,8 @@ class HydroManager:
             data = self.db.get_schedule()
             self.broadcast('setting_schedule', data)
             self.schedule = data
+            # スケジュール変更があったら、現在の時間に合わせてハードウェア状態を即座に同期させる
+            self.sync_hardware_now()
         return self.make_result(ret, "update schedule setting", True)
 
     def cmd_post_sensor_limit(self, request):
@@ -1013,7 +1015,7 @@ class HydroManager:
             return self.make_result(True, "水位は十分です。")
     
     def cmd_subpump_start(self, request):
-        """サブポンプの起動と監視タスクの割り当て（軽量・安全なEventlet版）"""
+        """サブポンプの起動と監視タスクの割り当て"""
         if self.subpump_timer is not None:
             return self.make_result(False, "subpump already running")
 
@@ -1146,6 +1148,8 @@ class HydroManager:
                         self.notifier.send_emergency("【警告】自動補充中にサブタンクが空になりました。")
                     break
 
+                self.cmd_subpump_update(None) # 状態更新をフロントへ通知
+
         # 💡 本物のOSスレッドは作らず、SocketIOの軽量タスクとして裏で安全に回します
         self.socketio.start_background_task(_subpump_monitor_task)
 
@@ -1205,7 +1209,8 @@ class HydroManager:
             'float_sub': self.device.float_sub.is_active,
             'leak_detect': self.device.leak_detect.is_active,
             'water_check': self.device.water_check.is_active,
-            'refill_level': self.sensors.read_water_level()
+            'refill_level': self.sensors.read_water_level(),
+            'water_valve': self.device.water_valve.is_active
         }
     
     def cmd_make_report(self, request):
@@ -1227,6 +1232,11 @@ class HydroManager:
         control = request.get('option')
         self.device.ssr_room_fan.on() if control == 'on' else self.device.ssr_room_fan.off()
         return self.make_result(True, f"SSR ssr_room_fan:{control}")
+
+    def cmd_test_water_valve(self, request):
+        control = request.get('option')
+        self.device.water_valve.on() if control == 'on' else self.device.water_valve.off()
+        return self.make_result(True, f"Water valve:{control}")
 
     def cmd_debug_time_span(self, request):
         self.MINUTE_START = int(request.get('minute_start', self.MINUTE_START))

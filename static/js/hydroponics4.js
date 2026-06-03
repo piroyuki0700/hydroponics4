@@ -25,7 +25,7 @@ const $$ = (selector, context = document) => Array.from(context.querySelectorAll
 document.addEventListener('DOMContentLoaded', () => {
   // バージョン
   const versionEl = $('#version');
-  if (versionEl) versionEl.textContent = 'Ver.2026.5.15';
+  if (versionEl) versionEl.textContent = 'Ver.2026.6.3';
 
   // 最初は非表示にするもの
   const settingEl = $('#setting');
@@ -553,7 +553,7 @@ function setValueRefillUpdate(data) {
   }
 
   // フロートスイッチ、漏水検知、循環検知状態
-  const input_switchs = ['float_main_top', 'float_main_bottom', 'float_sub', 'leak_detect', 'water_check'];
+  const input_switchs = ['float_main_top', 'float_main_bottom', 'float_sub', 'leak_detect', 'water_check', 'water_valve'];
   for (const input_switch of input_switchs) {
     if (input_switch in data) {
       const iconSwitch = $('#icon_' + input_switch);

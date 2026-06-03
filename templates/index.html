@@ -321,7 +321,7 @@
             </div>
           </div>
           <div class="content_info">
-            <div class="content_countdown mt-3">
+            <div class="content_countdown">
               <div id="pump_working">
                 <i class="bi bi-arrow-repeat bi-spin text-primary"></i>
               </div>
@@ -331,6 +331,10 @@
               <div id="pump_countdown">停止</div>
             </div>
             <div id="pump_info" class="mt-2">待機中</div>
+            <div>
+              <span class="border rounded p-1 bg-white small text-dark">循環検知<i id="icon_water_check" class="bi bi-check-circle text-success"></i></span>
+              <span class="border rounded p-1 bg-white small text-dark">漏水検知<i id="icon_leak_detect" class="bi bi-check-circle text-success"></i></span>
+            </div>
           </div>
         </div>
 
@@ -353,14 +357,12 @@
             <div class="content_info pt-2">
               <div class="mb-1 d-flex flex-column align-items-center gap-1">
                 <div>
-                  <span class="small mb-1">■現在の状態</span>
+                  <span class="border rounded p-1 bg-white small text-dark">バルブ<i id="icon_water_valve" class="bi bi-check-circle text-success"></i></span>
                   <span class="border rounded p-1 bg-white small text-dark">水位 <i id="subpump_working" class="bi bi-arrow-repeat text-secondary"></i> <span id="refill_level"></span>％</span>
                 </div><div>
                   <span class="border rounded p-1 bg-white small text-dark">メイン上 <i id="icon_float_main_top" class="bi bi-check-circle text-success"></i></span>
                   <span class="border rounded p-1 bg-white small text-dark">メイン下 <i id="icon_float_main_bottom" class="bi bi-check-circle text-success"></i></span>
                   <span class="border rounded p-1 bg-white small text-dark">サブ<i id="icon_float_sub" class="bi bi-check-circle text-success"></i></span>
-                  <span class="border rounded p-1 bg-white small text-dark">漏水検知<i id="icon_leak_detect" class="bi bi-check-circle text-success"></i></span>
-                  <span class="border rounded p-1 bg-white small text-dark">循環検知<i id="icon_water_check" class="bi bi-check-circle text-success"></i></span>
                 </div>
               </div>
             </div>
@@ -415,7 +417,7 @@
       <div class="content_main">
         <i class="bi bi-wrench text-secondary mt-2 mb-2 d-block"> センサー閾値の設定</i>
         <form id="sensor_limit_form">
-        <table class="table text-center align-middle option-table">
+        <table class="table table-striped text-center align-middle option-table">
           <thead>
             <tr class="table-secondary text-dark">
               <th>とても低い</th>
@@ -544,6 +546,9 @@
             <span class="small ms-3">SSR1(room fan):</span>
             <button onclick="debugButtonExec('test_ssr2', 'on')" class="btn btn-secondary command_button">On</button>
             <button onclick="debugButtonExec('test_ssr2', 'off')" class="btn btn-secondary command_button">Off</button> 
+            <span class="small ms-3">Water Valve:</span>
+            <button onclick="debugButtonExec('test_water_valve', 'on')" class="btn btn-secondary command_button">On</button>
+            <button onclick="debugButtonExec('test_water_valve', 'off')" class="btn btn-secondary command_button">Off</button>
           </span>
         </div>
         <textarea class="content_message border border-dark" id="debug_message"></textarea>
