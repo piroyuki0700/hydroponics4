@@ -117,8 +117,12 @@ CREATE TABLE `setting_sensor_limit` (
   -- DECIMAL(4,2) により 0.00 ～ 99.99 まで保持可能。水耕栽培(通常1.0~2.5)に最適。
   `tds_level_vlow`  DECIMAL(4,2) DEFAULT 0.50,
   `tds_level_low`   DECIMAL(4,2) DEFAULT 1.00,
-  `tds_level_high`  DECIMAL(4,2) DEFAULT 2.50,
-  `tds_level_vhigh` DECIMAL(4,2) DEFAULT 3.00,
+  `tds_level_high`  DECIMAL(4,2) DEFAULT 3.00,
+  `tds_level_vhigh` DECIMAL(4,2) DEFAULT 5.00,
+
+  -- CPU温度 (CPU Temperature)
+  `cpu_temp_high`  DECIMAL(4,1) DEFAULT 55.0,
+  `cpu_temp_vhigh` DECIMAL(4,1) DEFAULT 70.0,
 
   -- 更新日時
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

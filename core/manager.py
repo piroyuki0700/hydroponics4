@@ -229,34 +229,77 @@ class HydroManager:
                 self.device.ssr_room_fan.off()
                 
     def _start_cpu_temperature_task(self):
-        """1分間隔でCPU温度を監視し、外部からフラグが下ろされるまで回り続けるタスク"""
+        """10秒間隔でCPU温度を監視し、設定値に基づいてPWM制御するタスク"""
         self.cpu_fan_task_running = True
 
         def _cpu_monitor_loop():
-            self.logger.info("CPU Monitor: Dynamic background loop started.")
+            self.logger.info("CPU Monitor: Dynamic background loop started (Step PWM Control).")
             
+            # 現在のファン出力状態を社内で追跡するための変数 (初期値は0.0=停止)
+            current_speed = 0.0
+
             while self.cpu_fan_task_running:                
-                # CPU温度を取得してヒステリシス制御
                 try:
+                    # 1. 現在のCPU温度を取得
                     with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
                         cpu_temp = float(f.read().strip()) / 1000.0
-                except Exception:
-                    cpu_temp = 35.0 
-                
-                self.logger.info(f"CPU Monitor: Current CPU temperature: {cpu_temp:.1f}℃.")
-                if cpu_temp >= self.FAN_TEMP_ON:
-                    if not self.device.cooling_fan.is_active:
-                        self.logger.warning(f"CPU Temperature is high ({cpu_temp:.1f}℃). Turning ON cooling fan.")
-                        self.device.cooling_fan.value = 0.5  # 50%のPWM出力でファンをON
-                elif cpu_temp <= self.FAN_TEMP_OFF:
-                    if self.device.cooling_fan.is_active:
-                        self.logger.info(f"CPU Temperature cooled down ({cpu_temp:.1f}℃). Turning OFF cooling fan.")
+                except Exception as e:
+                    self.logger.error(f"CPU Monitor: Failed to read temperature: {e}")
+                    cpu_temp = 35.0  # 読み込み失敗時は安全のため低めの値をセット
+
+                # 2. DBや最新の設定から閾値（やや高い/とても高い）を取得
+                # ※ evaluate関数や設定保持用オブジェクトから最新の値を引っ張る想定です
+                # ※ 万が一設定が空だった場合のデフォルト値として 55.0 / 70.0 を指定しています
+                limit = self.db.get_sensor_limit() or {}
+                temp_high = limit.get('cpu_temp_high', 55.0)
+                temp_vhigh = limit.get('cpu_temp_vhigh', 70.0)
+
+                # 3. configから制御用の定数を取得
+                hysteresis = self.config.CPU_FAN_HYSTERESIS
+                speed_low = self.config.CPU_FAN_SPEED_LOW
+                speed_high = self.config.CPU_FAN_SPEED_HIGH
+
+                # 4. 段階的PWM ＋ ヒステリシス制御ロジック
+                next_speed = current_speed # 次の周期の速度（デフォルトは現状維持）
+
+                if current_speed == 0.0:
+                    # 【停止中】のとき
+                    if cpu_temp >= temp_vhigh:
+                        next_speed = speed_high
+                    elif cpu_temp >= temp_high:
+                        next_speed = speed_low
+
+                elif current_speed == speed_low:
+                    # 【50%運転中】のとき
+                    if cpu_temp >= temp_vhigh:
+                        # さらに温度が上がったら100%へ
+                        next_speed = speed_high
+                    elif cpu_temp <= (temp_high - hysteresis):
+                        # 設定値 - 3℃ を下回ったら安全に停止
+                        next_speed = 0.0
+
+                elif current_speed == speed_high:
+                    # 【100%全開運転中】のとき
+                    if cpu_temp <= (temp_vhigh - hysteresis):
+                        # とても高い閾値 - 3℃ を下回ったら50%に減速
+                        next_speed = speed_low
+
+                # 5. 出力に変化があれば、PWMデバイスへ反映
+                if next_speed != current_speed:
+                    self.logger.info(f"CPU Monitor: Temp={cpu_temp:.1f}℃, Fan={current_speed*100:.0f}%")
+                    if next_speed == 0.0:
                         self.device.cooling_fan.off()
+                        self.logger.info(f"CPU Monitor: Cooled down to {cpu_temp:.1f}℃. Stopping fan.")
+                    else:
+                        self.device.cooling_fan.value = next_speed
+                        self.logger.warning(f"CPU Monitor: Temperature changed ({cpu_temp:.1f}℃). Setting fan to {next_speed * 100:.0f}%.")
+                    
+                    current_speed = next_speed
 
-                # 1分(60秒)待機
-                gevent.sleep(60.0)
+                # 6. configで指定された間隔（10秒）待機
+                gevent.sleep(self.config.CPU_FAN_INTERVAL)
 
-            # ループを抜けたらファンを確実に止めてリソース解放
+            # タスク終了時のクリーンアップ（ファンを確実に停止）
             self.device.cooling_fan.off()
             self.cpu_fan_task_running = False
             self.logger.info("CPU Monitor: Dynamic background loop exited and fan forced OFF.")

@@ -76,3 +76,9 @@ class Config:
     VOLTAGE_EMPTY = float(os.getenv('VOLTAGE_EMPTY', 0.500))
     VOLTAGE_FULL  = float(os.getenv('VOLTAGE_FULL', 4.500))
 
+    # CPUファン制御設定
+    CPU_FAN_INTERVAL = float(os.getenv('CPU_FAN_INTERVAL', 10.0))     # 監視間隔（秒）
+    CPU_FAN_HYSTERESIS = float(os.getenv('CPU_FAN_HYSTERESIS', 3.0))  # ヒステリシス（℃）
+    CPU_FAN_SPEED_LOW = float(os.getenv('CPU_FAN_SPEED_LOW', 0.5))    # やや高い時のPWM出力 (0.0～1.0)
+    CPU_FAN_SPEED_HIGH = float(os.getenv('CPU_FAN_SPEED_HIGH', 1.0))  # とても高い時のPWM出力 (0.0～1.0)
+
