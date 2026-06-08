@@ -249,7 +249,7 @@ class HydroSensors:
             logger.error(f"DS18B20 read error: {e}")
             return None
 
-    def read_ec(self, water_temp):
+    def read_tds(self, water_temp):
         """💥 ラズパイ故障時はNone、Ubuntu開発時はデバッグ用ダミー値を返す"""
         if not IS_HARDWARE_OK:
             return round(random.uniform(1.2, 2.4), 2)

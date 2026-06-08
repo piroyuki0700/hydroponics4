@@ -374,8 +374,8 @@ function setValueSchedule(data)
   const items = [
     "time_morning", "time_noon", "time_evening", "time_night",
     "camera1", "camera2", "camera3", "camera4", "camera5",
-    "refill_max_seconds", "refill_night_days", "valve_open", "valve_close",
-    "fert1_seconds", "fert2_seconds", "fert3_seconds", "fert4_seconds"
+    "refill_max_seconds", "valve_open", "valve_close",
+    "fert1_seconds", "fert2_seconds", "fert3_seconds", "fert4_seconds", "fert_adjust_hour"
   ];
 
   for (const item of items) {
@@ -389,9 +389,8 @@ function setValueSchedule(data)
     "time_morning", "time_noon", "time_evening", "time_night",
     "morning_on", "morning_off", "noon_on", "noon_off", "evening_on", "evening_off",
     "night_on", "night_off",
-    "refill_night_days", "refill_max_seconds",
-    "valve_open", "valve_close",
-    "fert1_seconds", "fert2_seconds", "fert3_seconds", "fert4_seconds",
+    "refill_max_seconds", "valve_open", "valve_close",
+    "fert1_seconds", "fert2_seconds", "fert3_seconds", "fert4_seconds", "fert_adjust_hour",
     "camera1", "camera2", "camera3", "camera4", "camera5",
     "notify_time"
   ];
@@ -708,8 +707,8 @@ function scheduleCommitClick() {
   const items = [
   //  "time_spot1", "time_spot2", "time_spot3", // ⚠️ 旧データの互換性・データベース保護のために残す場合はこのままでOK
     "camera1", "camera2", "camera3", "camera4", "camera5",
-    "refill_max_seconds", "refill_night_days", "valve_open", "valve_close",
-    "fert1_seconds", "fert2_seconds", "fert3_seconds", "fert4_seconds"
+    "refill_max_seconds", "valve_open", "valve_close",
+    "fert1_seconds", "fert2_seconds", "fert3_seconds", "fert4_seconds", "fert_adjust_hour"
   ];
 
   for (const item of items) {

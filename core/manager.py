@@ -527,12 +527,52 @@ class HydroManager:
         # 10. ポンプの間間欠運転を起動
         self._start_intermittent_pump(mode)
 
+        # 11. 💥 液肥自動調整タスク（DBの数値閾値を用いた判定） ---
+        # DB（self.schedule）から有効化フラグと調整時刻を取得
+        # ※ 動的キャストの安全のため、bool型とint型に変換しています
+        is_fert_adjust_active = bool(self.schedule.get('fert_adjust_active', False))
+        fert_adjust_hour = int(self.schedule.get('fert_adjust_hour', 12))
+
+        if is_fert_adjust_active and now.hour == fert_adjust_hour and now.minute == 0:
+            self.logger.info(f"Scheduled Time ({fert_adjust_hour}:00) reached. Evaluating fertilizer levels for boost...")
+
+            try:
+                # 1. 最新のセンサー情報を取得
+                water_temp = self.sensors.read_water_temp()
+                current_tds = self.sensors.read_tds(water_temp) # 実際のTDS(EC)測定値を取得
+                water_level = self.sensors.read_water_level()
+
+                # 2. DBから濃度（TDS）の閾値を取得（参考コードの構成を踏襲）
+                limit = self.db.get_sensor_limit() or {}
+                # 万が一設定が空だった場合のデフォルト値として 0.5 (EC) などを指定
+                tds_level_vlow = float(limit.get('tds_level_vlow', 0.5))
+
+                self.logger.info(f"Scheduled Check: Current TDS={current_tds}, Target VLow Threshold={tds_level_vlow}, Water Level={water_level}%")
+
+                # 🚨 条件判定: 現在のTDSが「とても低い」の数値を下回り、かつ水位が50%以上か？
+                if current_tds <= tds_level_vlow and water_level >= 50:
+                    self.logger.warning(f"Mid-day boost conditions met! (TDS {current_tds} <= {tds_level_vlow}). Triggering 50% duration fertilization.")
+
+                    # 通常設定の半分の秒数を計算（最低1秒保証）
+                    f1_sec = max(1, int(self.schedule.get('fert1_seconds', 10)) // 2)
+                    f2_sec = max(1, int(self.schedule.get('fert2_seconds', 10)) // 2)
+                    f3_sec = max(1, int(self.schedule.get('fert3_seconds', 10)) // 2)
+                    f4_sec = max(1, int(self.schedule.get('fert4_seconds', 10)) // 2)
+
+                    # 共通化したシークエンス関数を、独立したバックグラウンドタスクとして起動！
+                    self.socketio.start_background_task(self._fertilize_sequence_task, f1_sec, f2_sec, f3_sec, f4_sec)
+                else:
+                    self.logger.info("Mid-day boost conditions not met. No adjustment needed.")
+
+            except Exception as e:
+                self.logger.error(f"Failed during scheduled fertilizer adjustment check: {e}")
+
     def _manage_leak_detection_task(self):
         """バルブが開いている時間帯、または漏水中の時だけ監視ループを回すエコ＆自動翌日リセット設計"""
         v_open = self.schedule.get('valve_open')
         v_close = self.schedule.get('valve_close')
         now_hour = datetime.now().hour
-        
+
         is_window = (v_open is not None and v_close is not None and int(v_open) <= now_hour < int(v_close))
         is_leaking = self.device.leak_detect.is_active
 
@@ -542,21 +582,21 @@ class HydroManager:
                 self.logger.info("Safety: Active-window Leak detection loop started.")
                 while True:
                     gevent.sleep(1.0)
-                    
+
                     # 🔥 【即時アラート】日中の監視中に漏水を検知した場合
                     if self.device.leak_detect.is_active:
                         self.logger.critical("🚨 LEAK DETECTED! Forcing water valve CLOSE!")
                         self.device.water_valve.off() # バルブ強制閉鎖のみを実行
-                        
+
                         # 💥 漏水検知時は、時間を待たずにその瞬間に即座にDiscordへSOSを飛ばします！
                         if bool(int(self.schedule.get('emergency_active', 0))):
                             self.notifier.send_emergency("【警告】サブタンクからの漏水を検知しました。給水バルブを緊急閉鎖しました。")
                         break # 発報・閉鎖したらこの日のループを終了（翌朝00時に再チェックされて自動で状態リセット）
-                        
+
                     # 時間帯を過ぎてバルブが閉じ、漏水もなければループを抜けてお休みする
                     if not is_window and not self.device.leak_detect.is_active:
                         break
-                        
+
                 self.leak_task = None
                 self.logger.info("Safety: Leak detection loop exited cleanly.")
 
@@ -770,7 +810,7 @@ class HydroManager:
         water_temp = self.sensors.read_water_temp()
         if water_temp is not None:
             report['water_temp'] = water_temp
-        report['tds_level'] = self.sensors.read_ec(report.get('water_temp'))
+        report['tds_level'] = self.sensors.read_tds(report.get('water_temp'))
         report['brightness'] = self.sensors.read_lux()
         report['water_pressure'] = self.sensors.read_pressure_voltage()
         report['water_level'] = self.sensors.read_water_level()
@@ -966,7 +1006,7 @@ class HydroManager:
         elif kind == 'tds_level':
             # 濃度測定には水温補正が必要なため、まず水温を取得
             water_temp = self.sensors.read_water_temp()
-            value = self.sensors.read_ec(water_temp)
+            value = self.sensors.read_tds(water_temp)
             if value is not None:
                 return self.make_result(True, f"tds_level = {value}")
 
@@ -1031,19 +1071,19 @@ class HydroManager:
                     # B) 現在のEC濃度をその場で測定して判定
                     self.logger.info("Fertilizer: Checking current EC level before refill...")
                     water_temp = self.sensors.read_water_temp()
-                    current_ec = self.sensors.read_ec(water_temp)
+                    current_tds = self.sensors.read_tds(water_temp)
                     
                     # 閾値評価ロジック(evaluate)を部分再現して very_high をチェック
                     limit = self.db.get_sensor_limit() or {}
                     vhigh_limit = limit.get('tds_level_vhigh')
                     
-                    if current_ec is not None and vhigh_limit is not None and current_ec > float(vhigh_limit):
+                    if current_tds is not None and vhigh_limit is not None and current_tds > float(vhigh_limit):
                         # 濃度が危険値（very_high）を超えている場合は水のみ補充
-                        self.logger.warning(f"Fertilizer: EC is VERY HIGH ({current_ec}). Skipping fertilizer for safety.")
+                        self.logger.warning(f"Fertilizer: EC is VERY HIGH ({current_tds}). Skipping fertilizer for safety.")
                         request['is_auto_fertilize'] = False
                     else:
                         # 濃度が安全圏、かつ今日初めての自動補充なら「追肥フラグ」をONに！
-                        self.logger.info(f"Fertilizer: EC is safe ({current_ec}). Fertilizer will be added.")
+                        self.logger.info(f"Fertilizer: EC is safe ({current_tds}). Fertilizer will be added.")
                         request['is_auto_fertilize'] = True
 
                 return self.cmd_subpump_start(request)
@@ -1056,7 +1096,78 @@ class HydroManager:
         else:
             self.logger.info("Water level is sufficient. No refill needed.")
             return self.make_result(True, "水位は十分です。")
-    
+
+    def _fertilize_sequence_task(self, f1_sec, f2_sec, f3_sec, f4_sec):
+        try:
+            def check_system_alive():
+                if not self.switcher.running:
+                    self.device.fert_pump_1.off(); self.device.fert_pump_2.off()
+                    self.device.fert_pump_3.off(); self.device.fert_pump_4.off()
+                    raise RuntimeError("Fertilizer task aborted due to system shutdown.")
+
+            # ==================== Phase 1 ====================
+            self.logger.info(f"Fertilizer Phase 1: Turning ON Pump-1 (1号:{f1_sec}s) and Pump-3 (5号:{f3_sec}s).")
+            self.device.fert_pump_1.on()
+            self.device.fert_pump_3.on()
+            
+            start_p1 = time.time() # Phase 1 の開始実時間を記録
+            max_p1 = max(f1_sec, f3_sec)
+            
+            # 💡 いずれかのポンプが動いている、かつ最大時間を超えるまでループ
+            while (self.device.fert_pump_1.is_active or self.device.fert_pump_3.is_active) and (time.time() - start_p1 < max_p1 + 2):
+                gevent.sleep(0.5) # 💡 少し細かめにチェック（道を譲る）
+                check_system_alive()
+                
+                elapsed = time.time() - start_p1 # 実際に経過した秒数
+                
+                # 不一致（==）ではなく、時間を超えたか（>=）で判定するので絶対にすり抜けない
+                if self.device.fert_pump_1.is_active and elapsed >= f1_sec:
+                    self.device.fert_pump_1.off()
+                    self.logger.info("Pump-1 (1号) OFF")
+                    
+                if self.device.fert_pump_3.is_active and elapsed >= f3_sec:
+                    self.device.fert_pump_3.off()
+                    self.logger.info("Pump-3 (5号) OFF")
+
+            # 安全弁：ループを抜けた際、実時間超過で確実にOFFにする
+            self.device.fert_pump_1.off()
+            self.device.fert_pump_3.off()
+            
+            # 結晶化防止のために少し待機（必要に応じて数秒sleepを挟んでください）
+            gevent.sleep(1.0)
+            check_system_alive()
+
+            # ==================== Phase 2 ====================
+            self.logger.info(f"Fertilizer Phase 2: Turning ON Pump-2 (2号:{f2_sec}s) and Pump-4 (9号:{f4_sec}s).")
+            self.device.fert_pump_2.on()
+            self.device.fert_pump_4.on()
+            
+            start_p2 = time.time() # Phase 2 の開始実時間を記録
+            max_p2 = max(f2_sec, f4_sec)
+            
+            while (self.device.fert_pump_2.is_active or self.device.fert_pump_4.is_active) and (time.time() - start_p2 < max_p2 + 2):
+                gevent.sleep(0.5)
+                check_system_alive()
+                
+                elapsed = time.time() - start_p2
+                
+                if self.device.fert_pump_2.is_active and elapsed >= f2_sec:
+                    self.device.fert_pump_2.off()
+                    self.logger.info("Pump-2 (2号) OFF")
+                    
+                if self.device.fert_pump_4.is_active and elapsed >= f4_sec:
+                    self.device.fert_pump_4.off()
+                    self.logger.info("Pump-4 (9号) OFF")
+
+            self.device.fert_pump_2.off()
+            self.device.fert_pump_4.off()
+            self.logger.info("Fertilizer Sequence completed successfully.")
+                
+        except Exception as e:
+            self.logger.error(f"Error in fertilizer background thread: {e}")
+            self.device.fert_pump_1.off(); self.device.fert_pump_2.off()
+            self.device.fert_pump_3.off(); self.device.fert_pump_4.off()
+
     def cmd_subpump_start(self, request):
         """サブポンプの起動と監視タスクの割り当て"""
         if self.subpump_timer is not None:
@@ -1076,7 +1187,6 @@ class HydroManager:
         self.subpump_timer = threading.Timer(seconds, self._subpump_stop_callback)
         self.subpump_timer.start()
 
-        # 💡 軽量なEventletのループとして定義
         def _subpump_monitor_task():
             start_time = time.time()
             top_detect_counter = 0
@@ -1091,80 +1201,9 @@ class HydroManager:
                 f3_sec = int(self.schedule.get('fert3_seconds', 10))
                 f4_sec = int(self.schedule.get('fert4_seconds', 10))
                 
-                def _fertilize_sequence_task():
-                    try:
-                        def check_system_alive():
-                            if not self.switcher.running:
-                                self.device.fert_pump_1.off(); self.device.fert_pump_2.off()
-                                self.device.fert_pump_3.off(); self.device.fert_pump_4.off()
-                                raise RuntimeError("Fertilizer task aborted due to system shutdown.")
-
-                        # ==================== Phase 1 ====================
-                        self.logger.info(f"Fertilizer Phase 1: Turning ON Pump-1 (1号:{f1_sec}s) and Pump-3 (5号:{f3_sec}s).")
-                        self.device.fert_pump_1.on()
-                        self.device.fert_pump_3.on()
-                        
-                        start_p1 = time.time() # Phase 1 の開始実時間を記録
-                        max_p1 = max(f1_sec, f3_sec)
-                        
-                        # 💡 いずれかのポンプが動いている、かつ最大時間を超えるまでループ
-                        while (self.device.fert_pump_1.is_active or self.device.fert_pump_3.is_active) and (time.time() - start_p1 < max_p1 + 2):
-                            gevent.sleep(0.5) # 💡 少し細かめにチェック（道を譲る）
-                            check_system_alive()
-                            
-                            elapsed = time.time() - start_p1 # 実際に経過した秒数
-                            
-                            # 不一致（==）ではなく、時間を超えたか（>=）で判定するので絶対にすり抜けない
-                            if self.device.fert_pump_1.is_active and elapsed >= f1_sec:
-                                self.device.fert_pump_1.off()
-                                self.logger.info("Pump-1 (1号) OFF")
-                                
-                            if self.device.fert_pump_3.is_active and elapsed >= f1_sec: # 💡 バグ修正：f3_sec で判定すべき箇所
-                                self.device.fert_pump_3.off()
-                                self.logger.info("Pump-3 (5号) OFF")
-
-                        # 安全弁：ループを抜けた際、実時間超過で確実にOFFにする
-                        self.device.fert_pump_1.off()
-                        self.device.fert_pump_3.off()
-                        
-                        # 結晶化防止のために少し待機（必要に応じて数秒sleepを挟んでください）
-                        gevent.sleep(1.0)
-                        check_system_alive()
-
-                        # ==================== Phase 2 ====================
-                        self.logger.info(f"Fertilizer Phase 2: Turning ON Pump-2 (2号:{f2_sec}s) and Pump-4 (9号:{f4_sec}s).")
-                        self.device.fert_pump_2.on()
-                        self.device.fert_pump_4.on()
-                        
-                        start_p2 = time.time() # Phase 2 の開始実時間を記録
-                        max_p2 = max(f2_sec, f4_sec)
-                        
-                        while (self.device.fert_pump_2.is_active or self.device.fert_pump_4.is_active) and (time.time() - start_p2 < max_p2 + 2):
-                            gevent.sleep(0.5)
-                            check_system_alive()
-                            
-                            elapsed = time.time() - start_p2
-                            
-                            if self.device.fert_pump_2.is_active and elapsed >= f2_sec:
-                                self.device.fert_pump_2.off()
-                                self.logger.info("Pump-2 (2号) OFF")
-                                
-                            if self.device.fert_pump_4.is_active and elapsed >= f4_sec:
-                                self.device.fert_pump_4.off()
-                                self.logger.info("Pump-4 (9号) OFF")
-
-                        self.device.fert_pump_2.off()
-                        self.device.fert_pump_4.off()
-                        self.logger.info("Fertilizer Sequence completed successfully.")
-                        
-                    except Exception as e:
-                        self.logger.error(f"Error in fertilizer background thread: {e}")
-                        self.device.fert_pump_1.off(); self.device.fert_pump_2.off()
-                        self.device.fert_pump_3.off(); self.device.fert_pump_4.off()
-                
                 # メインの監視タスクを止めないよう、液肥シークエンス自体もさらに別タスクとして非同期に切り離す
                 # これにより、途中で満水になってサブポンプが止まっても、液肥は最後まで独立して回りきります！
-                self.socketio.start_background_task(_fertilize_sequence_task)
+                self.socketio.start_background_task(self._fertilize_sequence_task, f1_sec, f2_sec, f3_sec, f4_sec)
 
             while self.device.ssr_sub_pump.is_active:
                 # 💡 ここで1秒間、他のWeb通信へ道を譲ります（フリーズしません）

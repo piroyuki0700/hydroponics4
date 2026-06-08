@@ -58,7 +58,6 @@ CREATE TABLE `setting_schedule` (
   -- 自動給水設定 (Refill)
   `refill_active` BOOLEAN DEFAULT TRUE,
   `refill_max_seconds` INT DEFAULT 180, -- 給水の最大ON時間（秒）
-  `refill_night_days` INT DEFAULT 3, -- 夜間給水の実行日数（例: 3なら3日に1回夜間給水を実行）
   `valve_open` INT DEFAULT 4, -- 給水用バルブの開時刻（時）
   `valve_close` INT DEFAULT 6, -- 給水用バルブの閉時刻（時）
 
@@ -68,6 +67,7 @@ CREATE TABLE `setting_schedule` (
   `fert3_seconds` INT DEFAULT 20, -- 液肥3の追加秒数
   `fert4_seconds` INT DEFAULT 10, -- 液肥4の追加秒数
   `fert_adjust_active` BOOLEAN DEFAULT FALSE, -- 液肥調整の有効化
+  `fert_adjust_hour` INT DEFAULT 12, -- 液肥調整時刻（時）
 
   -- カメラ撮影タイミング（時）
   `camera1` INT DEFAULT 8, `camera2` INT DEFAULT 10, `camera3` INT DEFAULT 12, `camera4` INT DEFAULT 14, `camera5` INT DEFAULT 16,
