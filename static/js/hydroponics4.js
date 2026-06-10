@@ -5,9 +5,10 @@
 // グローバル変数
 let pump_active = false;
 
-let timerIdPump = 0;
-let timerIdCamera = 0;
-let timerIdReconnect = 0;
+let timerIdPump = null;
+let timerIdCamera = null;
+let timerIdReconnect = null;
+let timerIdCpuTemp = null;
 
 let webSocket = null;
 let connectRetry = true;
@@ -23,10 +24,6 @@ const $$ = (selector, context = document) => Array.from(context.querySelectorAll
 // 初期化処理
 //
 document.addEventListener('DOMContentLoaded', () => {
-  // バージョン
-  const versionEl = $('#version');
-  if (versionEl) versionEl.textContent = 'Ver.2026.6.3';
-
   // 最初は非表示にするもの
   const settingEl = $('#setting');
   if (settingEl) settingEl.style.display = 'none'; // 設定ページ
@@ -37,7 +34,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 時計の表示
   setTimeout(UpdateClock, 500);
-
+  // バージョン表示の初期化
+  initVersionPane();
+  
   // websocket-serverと接続
   websocketConnect();
 });
@@ -69,7 +68,7 @@ function disconnectButtonClick()
 }
 
 //
-// メインページへ移動（修正版）
+// メインページへ移動
 //
 function goMain()
 {
@@ -82,7 +81,7 @@ function goMain()
 }
 
 //
-// 設定ページへ移動（修正版）
+// 設定ページへ移動
 //
 function goSetting()
 {
@@ -99,10 +98,10 @@ function goSetting()
 //
 function websocketConnect()
 {
-  if (timerIdReconnect != 0)
+  if (timerIdReconnect != null)
   {
     clearTimeout(timerIdReconnect);
-    timerIdReconnect = 0;
+    timerIdReconnect = null;
   }
 
   if (webSocket != null)
@@ -172,6 +171,20 @@ function websocketConnect()
     Object.assign(master, data);
   });
 
+  webSocket.on('cpu_temperature_response', (data) => {
+    console.log("Received CPU temperature data:", data); // デバッグ用ログ
+    if (data.success) {
+      const cpuTempEl = $('#cpu_temperature');
+      if (cpuTempEl) {
+        cpuTempEl.textContent = data.cpu_temp + " ℃";
+      }
+      Object.assign(master, data);
+    } else {
+      // サーバー側での読み取りエラー発生時はタイマーを止めてボタンを出す
+      handleCpuUpdateError();
+    }
+  });
+
   // // 結果ポップアップ通知
   // webSocket.on('result', (data) => {
   //   printDebugMessage(data['datetime'] + ': ' + data['result'] + ' - ' + data['message']);
@@ -220,9 +233,9 @@ function websocket_close(event)
 
 function websocket_error(event)
 {
-  if (timerIdReconnect != 0){
+  if (timerIdReconnect != null){
     clearTimeout(timerIdReconnect);
-    timerIdReconnect = 0;
+    timerIdReconnect = null;
   } else {
     printDebugMessage("websocket error occured.");
     const now = new Date();
@@ -242,20 +255,32 @@ function websocket_initial_data(data)
   setValuePumpStatus(data);
   setValueRefillUpdate(data);
   setValueInactiveColor(data);
+  setValueVersionData(data);
 }
 
 //
-// websocketサーバーへデータ送信
+// websocketサーバーへデータ送信（個別レスポンス処理対応版）
 //
 function websocket_send(data) {
   if (webSocket && webSocket.connected) {
     webSocket.emit('command', data, (response) => {
       if (response) {
-        // サーバーから 'result'（'ok'または'error'）と 'message'、'datetime' が確実に届きます
+        // 1. サーバーから 'result'（'ok'または'error'）と 'message'、'datetime' が確実に届きます
         printDebugMessage(response['datetime'] + ': ' + response['result'] + ' - ' + response['message']);
         
         if (response['show_popup']) {
           showModalResult(response);
+        }
+
+        // 2. 💥 新設: サーバーからの応答の中に、個別イベント用のデータが含まれているかチェック
+        // サーバー側が response['type'] や response['data'] という形で温度を返してきた場合、
+        // 既存の webSocket.on('イベント名') を手動でトリガー（発火）させます。
+        if (response['type']) {
+          const eventType = response['type']; // 例: 'cpu_temperature_response'
+          const eventData = response['data'] || response; // データそのもの、またはresponse全体
+
+          // Socket.IOの内部マネージャーを通じて、登録済みの 'cpu_temperature_response' などの関数を呼び出す
+          webSocket.listeners(eventType).forEach(listener => listener(eventData));
         }
       }
     });
@@ -610,6 +635,35 @@ function setValueInactiveColor(data) {
   }
 }
 
+//
+// バージョン情報の反映
+//
+function setValueVersionData(data) {
+  // --- 既存の初期データ展開処理（省略） ---
+  // $('#water_level').textContent = data.water_level; などの後ろに追記
+
+  // 💥 サーバーから受け取ったバージョン情報を展開
+  const versionEl = $('#app_version');
+  if (versionEl) {
+      versionEl.textContent = data.app_version || 'Ver.Unknown';
+  }
+
+  const hwVersionEl = $('#hw_version');
+  if (hwVersionEl) {
+      hwVersionEl.textContent = data.hw_version || '---';
+  }
+
+  const osVersionEl = $('#os_version');
+  if (osVersionEl) {
+      osVersionEl.textContent = data.os_version || '---';
+  }
+
+  const githubUrlEl = $('#github_url');
+  if (githubUrlEl) {
+      githubUrlEl.href = data.github_url || '#';
+      githubUrlEl.textContent = data.github_repo_name || 'GitHub Link';
+  }
+}
 //
 // メイン：ポンプボタン
 //
@@ -997,6 +1051,100 @@ function showModalResult(data)
   }
 }
 
+/**
+ * 画面起動時、またはWebSocket接続完了時に一度だけ呼び出す初期化関数
+ */
+function initVersionPane() {
+  // 💡 確実にイベントを拾うため、document全体でタブ切り替えイベントを監視します
+
+  // 1. タブが表示された瞬間のイベント
+  document.addEventListener('shown.bs.tab', (event) => {
+    // event.target はクリックされた <a> タグを指します
+    const activatedTab = event.target;
+
+    // <a>タグの href 属性が「#pane_version」だったら、バージョンタブが開かれたと判断
+    if (activatedTab && activatedTab.getAttribute('href') === '#pane_version') {
+      // 1分ごとの自動更新タイマーを開始
+      startCpuAutoUpdate();
+    }
+  });
+
+  // 2. 他のタブに切り替わって隠れた瞬間のイベント
+  document.addEventListener('hidden.bs.tab', (event) => {
+    const deactivatedTab = event.target;
+
+    // 隠れたタブが「#pane_version」だったら、タイマーを即座に停止！
+    if (deactivatedTab && deactivatedTab.getAttribute('href') === '#pane_version') {
+      stopCpuAutoUpdate();
+    }
+  });
+}
+
+/**
+ * CPU温度の自動定期更新を開始する
+ */
+function startCpuAutoUpdate() {
+  // 既存のタイマーがあれば一度クリア（二重起動防止）
+  if (timerIdCpuTemp) {
+    clearInterval(timerIdCpuTemp);
+  }
+
+  // エラー再開ボタンを隠す
+  const btnRefresh = $('#btn_refresh_cpu');
+  if (btnRefresh) {
+    btnRefresh.classList.add('d-none');
+  }
+
+  // 表示された瞬間にまず1回最新値をリクエスト
+  requestCpuTemperature();
+
+  // 1分(60000ミリ秒)ごとに繰り返し実行
+  timerIdCpuTemp = setInterval(function() {
+    requestCpuTemperature();
+  }, 60000);
+}
+
+/**
+ * CPU温度の自動定期更新を完全に停止する（新規追加）
+ */
+function stopCpuAutoUpdate() {
+  if (timerIdCpuTemp) {
+    clearInterval(timerIdCpuTemp);
+    timerIdCpuTemp = null;
+  }
+}
+
+/**
+ * サーバーへCPU温度をリクエストする
+ */
+function requestCpuTemperature() {
+  try {
+    websocket_send({'command': 'get_cpu_temperature'});
+  } catch (e) {
+    handleCpuUpdateError();
+  }
+}
+
+/**
+ * 「再開」ボタンが押されたときに自動更新をリトライする関数
+ */
+function retryCpuUpdate() {
+  startCpuAutoUpdate();
+}
+
+/**
+ * 通信エラーなど、更新が失敗したときの処理
+ */
+function handleCpuUpdateError() {
+  printDebugMessage("CPU温度の取得に失敗しました。通信状態を確認してください。");
+  // エラー時もタイマーを安全に止める
+  stopCpuAutoUpdate();
+
+  const btnRefresh = $('#btn_refresh_cpu');
+  if (btnRefresh) {
+    btnRefresh.classList.remove('d-none');
+  }
+}
 //
 // デバッグ：サーバーへリクエストを送ってLEDをON/OFFするテスト
 //

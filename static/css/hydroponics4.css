@@ -310,3 +310,35 @@ table.option-table tr.narrow-row td {
   max-width: max-content !important;
   min-width: 350px; /* あまりに文字が短いときに小さくなりすぎるのを防ぐ安全弁 */
 }
+
+/* 新規追加：バージョンタブ専用のカードデザイン設定 */
+.version-card {
+  width: 85%;
+  max-width: 650px;
+  border-radius: 8px;
+}
+
+.version-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #dee2e6;
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+  font-size: 0.85em; /* 1.9emベースに対して少しだけ引き締め、1行に収める */
+}
+
+.version-label {
+  font-weight: bold;
+  color: #495057;
+}
+
+.version-value {
+  text-align: right;
+  color: #212529;
+}
+
+.version-btn {
+  font-size: 0.8em;
+  vertical-align: middle;
+}

@@ -6,6 +6,7 @@ import time
 from datetime import datetime, timedelta
 from decimal import Decimal
 import gevent
+import platform
 
 from core.notifier import HydroNotifier
 
@@ -719,6 +720,37 @@ class HydroManager:
             'inactive_string': 'inactive' if not schedule_active else ''
         })
 
+        # 💥 追加: サーバーから送信するシステム基本情報を集約
+        # ラズパイのモデル名取得
+        hw_version = "Raspberry Pi (Unknown)"
+        try:
+            if os.path.exists('/proc/device-tree/model'):
+                with open('/proc/device-tree/model', 'r') as f:
+                    hw_version = f.read().strip('\x00')
+        except Exception:
+            hw_version = "Raspberry Pi Zero 2 WH"
+
+        # OSバージョン取得
+        os_version = f"{platform.system()} {platform.release()}"
+        try:
+            if os.path.exists('/etc/os-release'):
+                with open('/etc/os-release', 'r') as f:
+                    for line in f:
+                        if line.startswith('PRETTY_NAME='):
+                            os_version = line.split('=')[1].strip().strip('"')
+                            break
+        except Exception:
+            pass
+
+        # ペイロードへバージョン情報を追加
+        initial_payload.update({
+            'app_version': self.config.APP_VERSION,
+            'hw_version': hw_version,
+            'os_version': os_version,
+            'github_url': self.config.GITHUB_URL,
+            'github_repo_name': self.config.GITHUB_REPO_NAME
+        })
+
         # 安全な型へ一括変換して、JS側の 'initial_data' 窓口へ一撃で送信
         cleaned_payload = self._clean_dict(initial_payload)
         self.socketio.emit('initial_data', cleaned_payload)
@@ -1326,5 +1358,28 @@ class HydroManager:
         self.MINUTE_REFILL = int(request.get('minute_refill', self.MINUTE_REFILL))
         return self.make_result(True, f"changed time span to {self.MINUTE_START}-{self.MINUTE_STOP}-{self.MINUTE_REFILL}")
 
-    def debug_echo(self, request):
-        return self.make_result(True, "echo from web socket server.")
+    def cmd_get_cpu_temperature(self, request):
+        """現在のCPU温度を読み取って返す"""
+        try:
+            with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
+                cpu_temp = float(f.read().strip()) / 1000.0
+            success = True
+        except Exception as e:
+            self.logger.error(f"Failed to read CPU temperature: {e}")
+            cpu_temp = "Error"
+            success = False
+
+        # 💡 websocket_send のコールバック（response）が期待する標準フォーマットに合わせる
+        return {
+            'result': 'ok' if success else 'error',
+            'message': f"CPU Temperature retrieved: {cpu_temp:.1f}°C" if success else "Failed to read CPU temp",
+            'datetime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'show_popup': False,  # 👈 温度更新のたびにポップアップが出ると邪魔なので False
+
+            # 💥 ここが重要！JavaScript側で個別関数を動かすための仕掛け
+            'type': 'cpu_temperature_response',
+            'data': {
+                'success': success,
+                'cpu_temp': f"{cpu_temp:.1f}" if success else cpu_temp
+            }
+        }

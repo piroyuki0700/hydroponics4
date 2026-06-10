@@ -82,3 +82,8 @@ class Config:
     CPU_FAN_SPEED_LOW = float(os.getenv('CPU_FAN_SPEED_LOW', 0.5))    # やや高い時のPWM出力 (0.0～1.0)
     CPU_FAN_SPEED_HIGH = float(os.getenv('CPU_FAN_SPEED_HIGH', 1.0))  # とても高い時のPWM出力 (0.0～1.0)
 
+    # バージョン情報
+    APP_VERSION = os.getenv('APP_VERSION', '----/--/--')
+    GITHUB_URL = os.getenv('GITHUB_URL', 'https://github.com/username/repository')
+    GITHUB_REPO_NAME = os.getenv('GITHUB_REPO_NAME', 'repository')
+

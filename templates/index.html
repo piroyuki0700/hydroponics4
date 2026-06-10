@@ -488,28 +488,50 @@
     </div>
 
 <div id="pane_version" class="tab-pane content_full">
-  <!-- 枠組み（黒帯）を維持 -->
-  <div class="content_top bg-dark"></div>
-  
-  <!-- ⚠️ content_main を縦方向の Flexbox（d-flex flex-column）に変更 -->
-  <div class="content_main d-flex flex-column">
-    <!-- 左上の見出しもそのまま維持 -->
-    <i class="bi bi-question-circle text-secondary m-2"> バージョン情報</i>
-    
-    <!-- ⚠️ 残りの余白全体（flex-grow-1）を使って、ロゴと文字を縦横中央揃え（justify-content-center align-items-center）にするコンテナを追加 -->
-    <div class="flex-grow-1 d-flex flex-column justify-content-center align-items-center mb-5">
-      <!-- 🔄 ロゴ画像エリア -->
-      <div class="content_logo logo_high w-100"></div>
+      <div class="content_top bg-dark"></div>
       
-      <!-- 🔄 バージョン文字列エリア -->
-      <div class="text-center mt-3">
-        水耕装置ソフトウェア<br/>
-        <span id="version"></span>
+      <div class="content_main d-flex flex-column">
+        <i class="bi bi-question-circle text-secondary m-2"> バージョン情報</i>
+        
+        <div class="flex-grow-1 d-flex flex-column justify-content-center align-items-center mb-4">
+          <div class="content_logo logo_high w-100"></div>
+          
+          <div class="text-center mt-2 mb-3">
+            水耕装置ソフトウェア<br/>
+            <span id="version" class="fw-bold"></span>
+          </div>
+
+          <div class="card bg-light border-secondary version-card">
+            <div class="card-body p-3">
+              <div class="version-item">
+                <span class="version-label">ハードウェア:</span>
+                <span id="hw_version" class="version-value">---</span>
+              </div>
+              <div class="version-item">
+                <span class="version-label">OS バージョン:</span>
+                <span id="os_version" class="version-value">---</span>
+              </div>
+              <div class="version-item">
+                <span class="version-label">GitHub:</span>
+                <span class="version-value">
+                  <a id="github_url" href="#" target="_blank" class="text-primary text-decoration-none">---</a>
+                </span>
+              </div>
+              <div class="version-item border-0 mb-0">
+                <span class="version-label">CPU 温度:</span>
+                <span class="version-value d-flex align-items-center">
+                  <span id="cpu_temperature">---</span>
+                  <button id="btn_refresh_cpu" onclick="retryCpuUpdate()" class="btn btn-outline-secondary btn-sm ms-2 d-none py-0 px-2 version-btn">
+                    <i class="bi bi-arrow-clockwise"></i> 再開
+                  </button>
+                </span>
+              </div>
+            </div>
+          </div>
+
+        </div>
       </div>
     </div>
-  </div>
-</div>
-
 
     <div id="pane_debug" class="tab-pane content_full">
       <div class="content_top bg-dark"></div>
