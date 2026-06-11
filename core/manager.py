@@ -958,16 +958,15 @@ class HydroManager:
         self.manual_timer_stop()
         self.switcher.stop()
         seconds = int(request.get('seconds', 0))
+        if seconds < 0:
+            seconds = 0
         self.device.pump_main_a.on()
         self.device.pump_main_b.off()
         if seconds > 0:
             self.manual_timer_start(seconds)
 
         data = {'status': 'manual_start', 'seconds': seconds}
-        if seconds >= 0:
-            self.db.set_pump_status(data)
-        else:
-            self.db.updateone('pump_status', {'status': data['status']})
+        self.db.set_pump_status(data)
         self.broadcast('pump_status', data)
         return self.make_result(True, "pump start (manual)")
 
@@ -1357,6 +1356,9 @@ class HydroManager:
         self.MINUTE_STOP = int(request.get('minute_stop', self.MINUTE_STOP))
         self.MINUTE_REFILL = int(request.get('minute_refill', self.MINUTE_REFILL))
         return self.make_result(True, f"changed time span to {self.MINUTE_START}-{self.MINUTE_STOP}-{self.MINUTE_REFILL}")
+
+    def debug_echo(self, request):
+        return self.make_result(True, "echo from web socket server.")
 
     def cmd_get_cpu_temperature(self, request):
         """現在のCPU温度を読み取って返す"""

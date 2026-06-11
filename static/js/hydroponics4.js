@@ -1166,10 +1166,7 @@ function debugButtonMeasure(sensor_kind) {
 // デバッグ：サブポンプ動作
 //
 function subPumpButtonClick(request, option="none") {
-  const data = {'command': 'subpump_' + request, 'option': option};
-  const levelActiveEl = $('input[name="level_active"]');
-  data["level_active"] = levelActiveEl && levelActiveEl.checked ? "1" : "0";
-  websocket_send(data);
+  websocket_send({'command': 'subpump_' + request, 'option': option});
 }
 
 //
