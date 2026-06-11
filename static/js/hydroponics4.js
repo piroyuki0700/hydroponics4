@@ -110,10 +110,13 @@ function websocketConnect()
     return;
   }
 
-  // Socket.IO の初期化
-  webSocket = io(server_uri, { transports: ['websocket'] });
+// 🔌 Socket.IO の初期化（自動再接続を完全に無効化）
+  webSocket = io(server_uri, { 
+    transports: ['websocket'],
+    reconnection: false  // 自動再接続（5秒ごとのリトライ）をオフにする
+  });
 
-  // 🔌 Socket.IO イベントハンドラの設定（分割・最新版）
+  // 🔌 Socket.IO イベントハンドラの設定
   webSocket.on('connect', websocket_open);
   webSocket.on('disconnect', websocket_close);
   webSocket.on('connect_error', websocket_error);
@@ -237,7 +240,7 @@ function websocket_error(event)
     clearTimeout(timerIdReconnect);
     timerIdReconnect = null;
   } else {
-    printDebugMessage("websocket error occured.");
+    printDebugMessage("websocket error occured." + event);
     const now = new Date();
     const nowstr = now.getFullYear() + "/" + (now.getMonth() + 1) + "/" + now.getDate()
       + " " + now.getHours() + ":" + now.getMinutes() + ":" + now.getSeconds();
