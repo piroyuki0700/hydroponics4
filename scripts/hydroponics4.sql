@@ -214,17 +214,18 @@ CREATE TABLE `refill_record` (
   -- ポンプ作動時間（秒）
   `on_seconds` INT DEFAULT NULL,
   
-  -- 起動トリガー（例: 'float_switch', 'manual'）
-  `trig` VARCHAR(16) DEFAULT NULL,
+  -- 起動トリガー（例: 'schedule', 'manual'）
+  `trigger` VARCHAR(16) DEFAULT NULL,
   
   -- 水圧計による参考水位（給水前後）
   `level_before` DECIMAL(4,1) DEFAULT NULL,
   `level_after`  DECIMAL(4,1) DEFAULT NULL,
   
   -- 物理フロートスイッチの状態
-  `upper` BOOLEAN DEFAULT NULL,
-  `lower` BOOLEAN DEFAULT NULL,
-  
+  `main_top` BOOLEAN DEFAULT NULL,
+  `main_bottom` BOOLEAN DEFAULT NULL,
+  `sub` BOOLEAN DEFAULT NULL,
+
   -- 作成日時
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   -- 履歴検索用の索引

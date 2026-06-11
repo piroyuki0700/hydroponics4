@@ -1,5 +1,6 @@
 import logging
 import os
+from re import sub
 import shutil
 import threading
 import time
@@ -686,8 +687,8 @@ class HydroManager:
         self.logger.info("Sequence REFILL: Checking water level for auto-refill.")
         
         # 💡 スケジュールに基づく自動補充を実行（内部で条件判定が行われます）
-        # 引数として空の辞書を渡し、optionはデフォルト（下限を下回ったら）で動かします
-        self.cmd_subpump_refill({})
+        # optionはデフォルト（下限を下回ったら）で動かします
+        self.cmd_subpump_refill({'trigger': 'schedule', 'option': 'default'})
 
     # === 🔌 Socket.IO 通信コア処理 ===
 
@@ -1220,6 +1221,8 @@ class HydroManager:
 
         def _subpump_monitor_task():
             start_time = time.time()
+            start_level = self.device.get_water_level()
+            trigger = request.get('trigger', 'manual') # triggerがない場合は'manual'とみなす
             top_detect_counter = 0
 
             # --- 💥 新機能: バックグラウンド時間差追肥ロジックの定義 ---
@@ -1246,7 +1249,7 @@ class HydroManager:
                     self.logger.info(f"Subpump monitor: Float main top detected ({top_detect_counter}/{self.REFILL_CONFIRM_COUNT})")
                     if top_detect_counter >= self.REFILL_CONFIRM_COUNT:
                         self.logger.info("Subpump monitor: Water level stabilized at TOP. Stopping refill.")
-                        self._stop_and_record_refill(start_time, "Success (Full)")
+                        self._stop_and_record_refill(trigger, start_time, start_level, "Success (Full)")
                         break
                 else:
                     if top_detect_counter > 0:
@@ -1256,7 +1259,7 @@ class HydroManager:
                 # B) サブタンクの空焚き防止判定
                 if not self.device.float_sub.is_active:
                     self.logger.warning("Subpump monitor: Subtank empty. Stopping pump.")
-                    self._stop_and_record_refill(start_time, "Aborted (Subtank empty)")
+                    self._stop_and_record_refill(trigger, start_time, start_level, "Aborted (Subtank empty)")
                     if int(self.schedule.get('emergency_active', 0)):
                         self.notifier.send_emergency("【警告】自動補充中にサブタンクが空になりました。")
                     break
@@ -1271,14 +1274,16 @@ class HydroManager:
         self.broadcast('refill_update', data)
         return self.make_result(True, f"subpump started for max {seconds} seconds")
 
-    def _stop_and_record_refill(self, start_time, result_status):
+    def _stop_and_record_refill(self, trigger, start_time, start_level, result_status):
         """フロートスイッチ検知による途中停止と、DBへの補充記録の保存"""
         # ポンプを安全に停止
         self._subpump_stop_callback()
         
         # 実際に動いていた秒数を計算
-        elapsed_seconds = int(time.time() - start_time)
-        self.logger.info(f"Refill ended. Duration: {elapsed_seconds}s. Status: {result_status}")
+        end_time = time.time()
+        elapsed_seconds = int(end_time - start_time)
+        end_level = self.device.get_water_level()
+        self.logger.info(f"Refill ended. Duration: {elapsed_seconds}s. Level : {start_level} -> {end_level}%. Status: {result_status}")
         
         # DBに補充の歴史（ログ）を保存
         # 💡 お使いのDBクラスのメソッド名（例: insert_refill_logなど）に合わせて調整してください
@@ -1286,7 +1291,13 @@ class HydroManager:
             self.db.insert_refill_record({
                 'duration_seconds': elapsed_seconds,
                 'status': result_status,
-                'recorded_at': datetime.now().strftime('%Y/%m/%d %H:%M:%S')
+                'on_seconds': elapsed_seconds,
+                'trigger': trigger,
+                'level_before': start_level,
+                'level_after': end_level,
+                'main_top': self.device.float_main_top.is_active,
+                'main_bottom': self.device.float_main_bottom.is_active,
+                'sub': self.device.float_sub.is_active
             })
         except Exception as e:
             self.logger.error(f"Failed to insert refill record to DB: {e}")

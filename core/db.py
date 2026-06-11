@@ -196,10 +196,10 @@ class HydroDB:
     def make_refill_record_string(self, data):
         before = 'ー' if data.get('level_before') is None else f"{data['level_before']}"
         after = 'ー' if data.get('level_after') is None else f"{data['level_after']}"
-        upper = 'ー' if data.get('upper') is None else ('○' if data['upper'] == 1 else '×')
-        lower = 'ー' if data.get('lower') is None else ('○' if data['lower'] == 1 else '×')
-        subp = 'ー' if data.get('subp') is None else ('○' if data['subp'] == 1 else '×')
-        return f"{data.get('refilled_at')}({data.get('on_seconds')} sec) {data.get('trig')} 上:{upper} 下:{lower} 補:{subp} （{before}％→{after}％)"
+        main_top = 'ー' if data.get('main_top') is None else ('○' if data['main_top'] == 1 else '×')
+        main_bottom = 'ー' if data.get('main_bottom') is None else ('○' if data['main_bottom'] == 1 else '×')
+        sub = 'ー' if data.get('sub') is None else ('○' if data['sub'] == 1 else '×')
+        return f"{data.get('created_at')}({data.get('on_seconds')} sec) {data.get('trigger')} 上:{main_top} 下:{main_bottom} 補:{sub} （{before}％→{after}％)"
 
     def get_latest_refill_record(self):
         """最新3件の給水履歴を改行で連結した1本の文字列としてフロントに返す"""

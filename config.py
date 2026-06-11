@@ -16,12 +16,7 @@ class Config:
     DB_USER = os.getenv('DB_USER', 'hydro_user')
     DB_PASSWORD = os.getenv('DB_PASSWORD')
 
-    # Notification APIs
-    X_API_KEY             = os.getenv('X_API_KEY')
-    X_API_SECRET_KEY      = os.getenv('X_API_SECRET_KEY')
-    X_ACCESS_TOKEN        = os.getenv('X_ACCESS_TOKEN')
-    X_ACCESS_TOKEN_SECRET = os.getenv('X_ACCESS_TOKEN_SECRET')
-    
+    # Discord Webhook URL
     DISCORD_WEBHOOK_URL   = os.getenv('DISCORD_WEBHOOK_URL')
 
     # Directories
@@ -30,14 +25,13 @@ class Config:
     TMP_PIC_DIR = 'tmp_pictures'
 
     # I2C Settings (💡 ast.literal_eval で 0x48 を自動で整数 72 に変換)
-    I2C_BUS = 1
     ADDR_ADS1115 = ast.literal_eval(os.getenv('ADDR_ADS1115', '0x48'))
     ADDR_BME280   = ast.literal_eval(os.getenv('ADDR_BME280', '0x76'))
     ADDR_VEML7700 = ast.literal_eval(os.getenv('ADDR_VEML7700', '0x10'))
 
     # ADC Channel Mapping (ADS1115)
-    CH_TDS_METER = 0  # AIN0
-    CH_PRESSURE  = 1  # AIN1
+    CH_TDS_METER = int(os.getenv('CH_TDS_METER', 0))  # AIN0
+    CH_PRESSURE  = int(os.getenv('CH_PRESSURE', 1))   # AIN1
 
     # GPIO Outputs (int型へ変換)
     PIN_SSR_SUB_PUMP = int(os.getenv('PIN_SSR_SUB_PUMP', 17))
