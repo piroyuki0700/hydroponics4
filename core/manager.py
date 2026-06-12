@@ -137,6 +137,7 @@ class HydroManager:
 
         # 💡 CPU空冷ファンタスクの多重起動を防ぐための状態管理フラグ
         self.cpu_fan_task_running = False
+        self.leak_detect_task_running = False
 
         # 💡 新機能用の変数初期化
         self.flow_count = 0        # 流量センサーの累計パルス数カウンター
@@ -146,6 +147,10 @@ class HydroManager:
         # gpiozeroのButtonクラスが持つバックグラウンド機能を利用するため、競合せず正確に数えます
         if hasattr(self.device, 'water_flow') and self.device.water_flow:
             self.device.water_flow.when_activated = self._pulse_counter_callback
+
+    def _is_schedule_active(self):
+        # スケジュール動作が有効かどうかを返す
+        return bool(int(self.schedule.get('schedule_active', 0)))
 
     def _pulse_counter_callback(self):
         """水流センサーからパルス信号が届くたびに裏で自動実行される超軽量コールバック"""
@@ -569,21 +574,27 @@ class HydroManager:
             except Exception as e:
                 self.logger.error(f"Failed during scheduled fertilizer adjustment check: {e}")
 
-    def _manage_leak_detection_task(self):
-        """バルブが開いている時間帯、または漏水中の時だけ監視ループを回すエコ＆自動翌日リセット設計"""
+    def _is_water_window(self):
+        """現在の時刻がバルブ開放時間帯かどうかを判定するヘルパー関数"""
         v_open = self.schedule.get('valve_open')
         v_close = self.schedule.get('valve_close')
-        now_hour = datetime.now().hour
+        now = datetime.now()
+        return v_open is not None and v_close is not None and int(v_open) <= now.hour < int(v_close)
 
-        is_window = (v_open is not None and v_close is not None and int(v_open) <= now_hour < int(v_close))
+    def _manage_leak_detection_task(self):
+        """バルブが開いている時間帯、または漏水中の時だけ監視ループを回すエコ＆自動翌日リセット設計"""
+        is_window = self._is_water_window()
         is_leaking = self.device.leak_detect.is_active
 
         # 💡 バルブ開放時間帯、または現時点で漏水している場合のみ、監視タスクがなければ起動
-        if (is_window or is_leaking) and self.leak_task is None:
+        if is_window or is_leaking:
+            self.is_leak_detect_task_running = True
+
+        if self.is_leak_detect_task_running == True and self.leak_task is None:
             def _leak_monitor_loop():
                 self.logger.info("Safety: Active-window Leak detection loop started.")
-                while True:
-                    gevent.sleep(1.0)
+                while self.is_leak_detect_task_running:
+                    gevent.sleep(10.0)
 
                     # 🔥 【即時アラート】日中の監視中に漏水を検知した場合
                     if self.device.leak_detect.is_active:
@@ -596,9 +607,11 @@ class HydroManager:
                         break # 発報・閉鎖したらこの日のループを終了（翌朝00時に再チェックされて自動で状態リセット）
 
                     # 時間帯を過ぎてバルブが閉じ、漏水もなければループを抜けてお休みする
+                    is_window = self._is_water_window()
                     if not is_window and not self.device.leak_detect.is_active:
                         break
 
+                self.is_leak_detect_task_running = False
                 self.leak_task = None
                 self.logger.info("Safety: Leak detection loop exited cleanly.")
 
@@ -900,7 +913,7 @@ class HydroManager:
                 # 💡 これにより、フロント(JS)の webSocket.on('tmp_picture') が叩かれ、setValueTmpPicture が動きます
                 payload = {
                     'tmp_picture_result': success,
-                    'tmp_picture_path': f"/tmp_pictures/{res.get('filename')}" if success else "",
+                    'tmp_picture_path': f"{self.config.TMP_PIC_DIR}/{res.get('filename')}" if success else "",
                     'tmp_picture_name': res.get('filename', ''),
                     'tmp_picture_taken': res.get('taken_at', '')
                 }
@@ -1221,7 +1234,7 @@ class HydroManager:
 
         def _subpump_monitor_task():
             start_time = time.time()
-            start_level = self.device.get_water_level()
+            start_level = self.device.read_water_level()
             trigger = request.get('trigger', 'manual') # triggerがない場合は'manual'とみなす
             top_detect_counter = 0
 
@@ -1282,7 +1295,7 @@ class HydroManager:
         # 実際に動いていた秒数を計算
         end_time = time.time()
         elapsed_seconds = int(end_time - start_time)
-        end_level = self.device.get_water_level()
+        end_level = self.device.read_water_level()
         self.logger.info(f"Refill ended. Duration: {elapsed_seconds}s. Level : {start_level} -> {end_level}%. Status: {result_status}")
         
         # DBに補充の歴史（ログ）を保存
