@@ -10,9 +10,9 @@ except Exception as e:
 
 # あとは安全にモンキーパッチを当てる
 import os
+import sys
 
-debug_mode = os.environ.get('FLASK_DEBUG') == 'true' and sys.gettrace() is not None
-if debug_mode:
+if sys.gettrace() is not None:
     print("⚠️デバッグモードで起動します。VSCodeデバッガとの互換性のためパッチをスキップしました。")
 else:
     from gevent import monkey
@@ -21,7 +21,6 @@ else:
 
 import logging
 import signal
-import sys
 from flask import Flask, render_template, request, send_from_directory
 from flask_socketio import SocketIO
 
@@ -57,8 +56,9 @@ logger = setup_logger()
 # 2. Flask & SocketIO の初期化
 app = Flask(__name__)
 app.config['SECRET_KEY'] = Config.SECRET_KEY
+flask_debug = Config.FLASK_DEBUG
 
-if debug_mode:
+if sys.gettrace() is not None:
     # VSCodeデバッガが動いている時は、衝突を避けるため
     # 標準スレッドモードで起動する
     print("⚠️ VSCodeデバッガを検出: パッチを無効化し、標準スレッドモードで起動します。")
@@ -135,7 +135,7 @@ if __name__ == '__main__':
         manager.start()
         
         # サーバー起動 (use_reloader=Falseを明示して二重起動バグを完全防御)
-        socketio.run(app, host='0.0.0.0', port=5000, debug=debug_mode, use_reloader=False)
+        socketio.run(app, host='0.0.0.0', port=5000, debug=flask_debug, use_reloader=False)
 
     except (KeyboardInterrupt, SystemExit):
         logger.info("Server shutdown initiated via interrupt/exit.")

@@ -8,7 +8,7 @@ load_dotenv()
 class Config:
     # Flask Settings
     SECRET_KEY = os.getenv('SECRET_KEY', 'default-secret-key')
-    DEBUG = os.getenv('DEBUG', 'False') == 'True'
+    FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'false') == 'true'
 
     # Database
     DB_HOST = os.getenv('DB_HOST', 'localhost')

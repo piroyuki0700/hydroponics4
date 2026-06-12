@@ -36,7 +36,7 @@ CREATE TABLE `setting_schedule` (
   `no` INT NOT NULL DEFAULT 1,
   -- 全体制御
   `schedule_active` BOOLEAN DEFAULT TRUE,
-  `circulator_active` BOOLEAN DEFAULT TRUE, -- 送風機スイッチ
+  `room_fan_active` BOOLEAN DEFAULT TRUE, -- 送風機スイッチ
   `nightly_active` BOOLEAN DEFAULT FALSE, -- 夜間スイッチ
 
   -- 時間帯の区切り（例: 6, 12, 17, 21 など時間を数値で格納）

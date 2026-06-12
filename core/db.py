@@ -252,19 +252,6 @@ class HydroDB:
     def insert_refill_record(self, data):
         return self.insert('refill_record', data)
 
-    def countup_sensor_error(self, sensor, limit):
-        data = self.getone('sensor_error')
-        if sensor not in data:
-            logger.error(f"Unknown sensor key: {sensor}")
-            return False
-        data[sensor] = data.get(sensor, 0) + 1
-        over_limit = False
-        if data[sensor] == limit:
-            data[sensor] = 0
-            over_limit = True
-        self.updateone('sensor_error', data)
-        return over_limit
-
     def __del__(self):
         try:
             self.conn.close()

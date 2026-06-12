@@ -128,8 +128,8 @@ class HydroManager:
         self.current_mode = "Unknown"
         self.leak_task = None
 
-        self.timer = None
         self.schedule = self.db.get_settings("setting_schedule") or {}
+        self.schedule_timer = None
         self.manual_timer = None
         self.subpump_timer = None
         self.usb_reserve_timer = None
@@ -152,6 +152,36 @@ class HydroManager:
         # スケジュール動作が有効かどうかを返す
         return bool(int(self.schedule.get('schedule_active', 0)))
 
+    def _stop_background_controls(self):
+        # バックグラウンドで動いているタスクをすべて停止する
+        self.logger.info("Stopping all background tasks...")
+        if self.schedule_timer is not None:
+            self.schedule_timer.cancel()
+            self.schedule_timer = None
+
+        if self.manual_timer is not None:
+            self.manual_timer.cancel()
+            self.manual_timer = None
+
+        if self.subpump_timer is not None:
+            self.subpump_timer.cancel()
+            self.subpump_timer = None
+
+        if self.usb_reserve_timer is not None:
+            self.usb_reserve_timer.cancel()
+            self.usb_reserve_timer = None
+
+        self._cpu_fan_task_running = False
+        self._leak_detect_task_running = False
+        self.cmd_pump_manual_stop()
+        # self.switcher.stop()
+
+    def _deactivate_schedule_controls(self):
+        self.logger.info("Deactivating schedule controls...")
+        self._stop_background_controls()
+        self.device.all_off()
+        self.broadcast('inactive_color' , self._get_deactivate_status())
+
     def _pulse_counter_callback(self):
         """水流センサーからパルス信号が届くたびに裏で自動実行される超軽量コールバック"""
         self.flow_count += 1
@@ -159,12 +189,18 @@ class HydroManager:
     def start(self):
         """システム起動時にシーケンス、漏水監視、CPU温度監視タスクをセット"""
         # 💡 debug=True によるFlaskリローダーの二重起動バグを防御
-        if os.environ.get('WERKZEUG_RUN_MAIN') != 'true' and self.config.DEBUG:
+        if os.environ.get('WERKZEUG_RUN_MAIN') != 'true' and self.config.FLASK_DEBUG:
             self.logger.info("Skipping HydroManager start in Flask child reloader process.")
             return
 
         self.logger.info("HydroManager sequence started.")
 
+        if not self._is_schedule_active():
+            self.logger.info("Schedule is inactive at startup. Ensuring all controls are deactivated.")
+            self._deactivate_schedule_controls()
+            return
+
+        # 起動時の現在時刻に合わせてハードウェア状態を即座に同期
         # 1. 💡 起動時の現在時刻をもとに、各機器のON/OFF状態をその場で即座に反映（追いつき処理）
         self.sync_hardware_now()
 
@@ -314,6 +350,10 @@ class HydroManager:
         self.socketio.start_background_task(_cpu_monitor_loop)
 
     def _set_next_sequence(self):
+        if self.schedule_timer is not None:
+            self.schedule_timer.cancel()
+            self.schedule_timer = None
+
         status = {}
         report = self.db.get_latest_report()
         if len(report):
@@ -347,8 +387,8 @@ class HydroManager:
         self.logger.info(f"Next sequence: {target.strftime('%H:%M:%S')} -> {next_task.__name__} (in {diff:.1f}s)")
 
         # 3. 💡 タイマーの第3引数(args)として、実行したい「関数オブジェクト」を直接渡す！
-        self.timer = threading.Timer(diff, self._sequence_callback, args=[next_task])
-        self.timer.start()
+        self.schedule_timer = threading.Timer(diff, self._sequence_callback, args=[next_task])
+        self.schedule_timer.start()
 
     def _sequence_callback(self, task_function):
         """タイマーから呼ばれるコールバック"""
@@ -363,8 +403,8 @@ class HydroManager:
         except Exception as e:
             self.logger.error(f"Error in sequence callback while executing {task_function.__name__}: {e}", exc_info=True)
             # 異常時も安全のため1分後にリトライ（次のスケジュール計算へ復帰を試みる）
-            self.timer = threading.Timer(60, self._set_next_sequence)
-            self.timer.start()
+            self.schedule_timer = threading.Timer(60, self._set_next_sequence)
+            self.schedule_timer.start()
 
     def _handle_start(self):
         """00分の定期自動処理（センサー計測、特定時刻撮影、バルブ/流量異常判定、
@@ -446,15 +486,14 @@ class HydroManager:
                     self.logger.info(f"Water window active ({now.hour}h) & Safety OK. Opening water valve.")
                     self.device.water_valve.on()
 
-                    if not self.device.water_valve.is_active:
+                    # 💡 さらに、もし今がちょうど水開けのタイミングだったら、予備USB出力も連動して30秒間ONにする特別な処理を追加
+                    if int(v_open) == now.hour and self.schedule.get('nightly_active', '0') == '1':
                         self.logger.info(f"Water window started ({now.hour}h). Activating hot water purge via USB Reserve for 30s!")
                         
                         # 予備USB出力をON
                         self.device.usb_reserve.on()
                         
                         # 30秒後に自動でOFFにする非ブロッキングタイマーを起動
-                        if self.usb_reserve_timer is not None:
-                            self.usb_reserve_timer.cancel()
                         self.usb_reserve_timer = threading.Timer(30.0, self._usb_reserve_off_callback)
                         self.usb_reserve_timer.start()
 
@@ -588,12 +627,12 @@ class HydroManager:
 
         # 💡 バルブ開放時間帯、または現時点で漏水している場合のみ、監視タスクがなければ起動
         if is_window or is_leaking:
-            self.is_leak_detect_task_running = True
+            self.leak_detect_task_running = True
 
-        if self.is_leak_detect_task_running == True and self.leak_task is None:
+        if self.leak_detect_task_running == True and self.leak_task is None:
             def _leak_monitor_loop():
                 self.logger.info("Safety: Active-window Leak detection loop started.")
-                while self.is_leak_detect_task_running:
+                while self.leak_detect_task_running:
                     gevent.sleep(10.0)
 
                     # 🔥 【即時アラート】日中の監視中に漏水を検知した場合
@@ -611,7 +650,7 @@ class HydroManager:
                     if not is_window and not self.device.leak_detect.is_active:
                         break
 
-                self.is_leak_detect_task_running = False
+                self.leak_detect_task_running = False
                 self.leak_task = None
                 self.logger.info("Safety: Leak detection loop exited cleanly.")
 
@@ -650,19 +689,7 @@ class HydroManager:
     def stop(self):
         """安全停止処理：タイマーとポンプをすべて止める"""
         self.logger.info("HydroManager stopping")
-        if self.timer is not None:
-            self.timer.cancel()
-            self.timer = None
-
-        # 30秒タイマーが動いている最中にシステムが止まったら安全にキャンセル
-        if self.usb_reserve_timer is not None:
-            self.usb_reserve_timer.cancel()
-            self.usb_reserve_timer = None
-
-        self.switcher.stop()
-        if self.subpump_timer is not None:
-            self.subpump_timer.cancel()
-            self.subpump_timer = None
+        self._stop_background_controls()
         self.device.all_off()
 
     def _determine_mode(self, now):
@@ -703,7 +730,12 @@ class HydroManager:
         # optionはデフォルト（下限を下回ったら）で動かします
         self.cmd_subpump_refill({'trigger': 'schedule', 'option': 'default'})
 
-    # === 🔌 Socket.IO 通信コア処理 ===
+    def _get_deactivate_status(self):
+        schedule_active = self._is_schedule_active()
+        return {
+            'activate': schedule_active,
+            'inactive_string': 'inactive' if not schedule_active else ''
+        }
 
     def send_initial_data(self):
         """Webブラウザ接続時に、クライアントの 'initial_data' イベントへ一括集約して送信"""
@@ -727,12 +759,7 @@ class HydroManager:
             initial_payload.update(report)
             initial_payload.update(self.evaluate(report))
 
-        schedule_data = self.db.get_schedule() or {}
-        schedule_active = bool(int(schedule_data.get('schedule_active', 0)))
-        initial_payload.update({
-            'activate': schedule_active,
-            'inactive_string': 'inactive' if not schedule_active else ''
-        })
+        initial_payload.update(self._get_deactivate_status())
 
         # 💥 追加: サーバーから送信するシステム基本情報を集約
         # ラズパイのモデル名取得
@@ -829,7 +856,22 @@ class HydroManager:
             self.broadcast('setting_schedule', data)
             self.schedule = data
             # スケジュール変更があったら、現在の時間に合わせてハードウェア状態を即座に同期させる
-            self.sync_hardware_now()
+            if self._is_schedule_active():
+                self.sync_hardware_now()
+                self._manage_leak_detection_task()
+                self._set_next_sequence() # 変更後のスケジュールに基づいて次のシーケンスを再計算してセット
+
+                # スケジュールを再有効化したときは、最新のレポートを再送して
+                # warning/danger 表示やセンサー画面を復元する
+                report = self.db.get_latest_report()
+                if report:
+                    report.update(self.evaluate(report))
+                    self.broadcast('report', report)
+            else:
+                # スケジュールが非アクティブになった場合は、すべての機器を安全に停止して状態をリセット
+                self.logger.info("Schedule deactivated. Stopping all devices and resetting states.")
+                self._deactivate_schedule_controls()
+
         return self.make_result(ret, "update schedule setting", True)
 
     def cmd_post_sensor_limit(self, request):

@@ -9,12 +9,12 @@ outfiles = "/tmp/picture_*.png"
 for outfile in  glob.glob(outfiles):
     os.remove(outfile)
 
-infiles = glob.glob("../picture/picture_*.jpg")
+infiles = glob.glob("../pictures/picture_*.jpg")
 infiles.sort()
 num = 0
 for infile in infiles:
     #print(infile)
-    matches = re.match(r'../picture/picture_([0-9]{4})([0-9]{2})([0-9]{2})_([0-9]{2})[0-9]{2}[0-9]{2}.jpg', infile)
+    matches = re.match(r'../pictures/picture_([0-9]{4})([0-9]{2})([0-9]{2})_([0-9]{2})[0-9]{2}[0-9]{2}.jpg', infile)
     if (matches != None):
         groups = matches.groups()
         #print(groups)
