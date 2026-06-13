@@ -176,6 +176,20 @@ class HydroManager:
         self.cmd_pump_manual_stop()
         # self.switcher.stop()
 
+    def _manage_cpu_fan_for_mode(self, mode):
+        """CPUファンのモード別制御を統一するヘルパー"""
+        if mode in ("Morning", "Noon", "Evening"):
+            if not self.cpu_fan_task_running:
+                self.logger.info(f"CPU Monitor: {mode} started. Launching CPU temperature task.")
+                self._start_cpu_temperature_task()
+        elif mode == "Night":
+            if self.cpu_fan_task_running:
+                self.logger.info("CPU Monitor: Night started. Stopping CPU temperature task.")
+                self.cpu_fan_task_running = False
+            else:
+                if self.device.cooling_fan.is_active:
+                    self.device.cooling_fan.off()
+
     def _deactivate_schedule_controls(self):
         self.logger.info("Deactivating schedule controls...")
         self._stop_background_controls()
@@ -188,11 +202,6 @@ class HydroManager:
 
     def start(self):
         """システム起動時にシーケンス、漏水監視、CPU温度監視タスクをセット"""
-        # 💡 debug=True によるFlaskリローダーの二重起動バグを防御
-        if os.environ.get('WERKZEUG_RUN_MAIN') != 'true' and self.config.FLASK_DEBUG:
-            self.logger.info("Skipping HydroManager start in Flask child reloader process.")
-            return
-
         self.logger.info("HydroManager sequence started.")
 
         if not self._is_schedule_active():
@@ -245,32 +254,39 @@ class HydroManager:
                 self.device.water_valve.off()
 
         # --- 💨 CPUファンの初期判定 ---
-        if mode == "Morning" or mode == "Noon" or mode == "Evening":
-            if not self.cpu_fan_task_running:
-                self._start_cpu_temperature_task()
-        elif mode == "Night":
-            self.cpu_fan_task_running = False
-            self.device.cooling_fan.off()
+        self._manage_cpu_fan_for_mode(mode)
 
         # --- 🌪️ 換気扇の初期判定 ---
+        self._manage_room_fan(mode)
+
+    def _manage_room_fan(self, mode, air_status=None):
+        if int(self.schedule.get('room_fan_active', 0)) != 1:
+            self.logger.info("Room fan is set to inactive in schedule. Ensuring it is OFF.")
+            self.device.ssr_room_fan.off()
+            return
+
         if mode == "Night":
+            # 夜間は気温の判定を完全に無視して強制シャットダウン
+            self.logger.info("It is Night time. Room fan is forced OFF regardless of temperature.")
             self.device.ssr_room_fan.off()
         else:
             # 起動直後はまだ最新レポートがないため、その場で一度温度を仮測定して判定
-            try:
-                temp_data = self.sensors.read_bme280()
-                air_temp = temp_data.get('air_temp', 25.0)
-                # 簡易判定（evaluateが持つ limit 構造から上限を取得して比較するのが理想です）
-                limit = self.db.get_sensor_limit() or {}
-                high_limit = limit.get('air_temp_high', 30.0)
-                
-                if air_temp >= float(high_limit):
-                    self.device.ssr_room_fan.on()
-                else:
-                    self.device.ssr_room_fan.off()
-            except Exception:
+            if air_status is None:
+                try:
+                    temp_data = self.evaluate(self.sensors.read_bme280())
+                    air_status = temp_data.get('air_temp_status', 'none')
+                except Exception as e:
+                    self.logger.error(f"Failed to read sensor data for room fan management: {e}")
+                    air_status = 'none'
+
+            # 朝・昼・夕の期間は、気温が上限を突破している時だけON
+            if air_status in ['warning', 'danger']:
+                self.logger.info(f"High room temperature detected ({air_status}) during active hours. Turning ON room fan.")
+                self.device.ssr_room_fan.on()
+            else:
+                self.logger.info(f"Room temperature is normal ({air_status}). Turning OFF room fan.")
                 self.device.ssr_room_fan.off()
-                
+
     def _start_cpu_temperature_task(self):
         """10秒間隔でCPU温度を監視し、設定値に基づいてPWM制御するタスク"""
         self.cpu_fan_task_running = True
@@ -368,12 +384,15 @@ class HydroManager:
 
         # 1. 次の目標の「分」と、その時に実行したい「関数（処理）」のペアを決定
         if m < self.MINUTE_START or self.MINUTE_REFILL <= m:
+            self.logger.info("Current time is in stop window. Next sequence will be START at the next hour.")
             next_m = self.MINUTE_START
             next_task = self._handle_start
         elif m < self.MINUTE_STOP:
+            self.logger.info("Current time is in active window. Next sequence will be STOP at 50 minutes.")
             next_m = self.MINUTE_STOP
             next_task = self._handle_stop
         else:
+            self.logger.info("Current time is in refill window. Next sequence will be REFILL at 55 minutes.")
             next_m = self.MINUTE_REFILL
             next_task = self._handle_refill
 
@@ -507,36 +526,11 @@ class HydroManager:
         # 4. 💡 毎時00分のタイミングで「常時漏水監視タスク」の状態を再評価・管理
         self._manage_leak_detection_task()
 
-        # 5. CPUファン(cooling_fan) 朝時間に突入したらタスク起動、夜時間に突入したらタスク停止
-        if mode == "Morning":
-            if not self.cpu_fan_task_running:
-                self.logger.info("CPU Monitor: Morning started. Launching CPU temperature task.")
-                self._start_cpu_temperature_task()
-                
-        elif mode == "Night":
-            if self.cpu_fan_task_running:
-                self.logger.info("CPU Monitor: Night started. Stopping CPU temperature task.")
-                # 💡 フラグをFalseにするだけで、裏のループが次の1分後に自動で終了・消滅します
-                self.cpu_fan_task_running = False
-            else:
-                # 念のため、夜間開始時にファンが回っていたら確実にOFFにする安全弁
-                if self.device.cooling_fan.is_active:
-                    self.device.cooling_fan.off()
+        # 5. CPUファン(cooling_fan) の制御
+        self._manage_cpu_fan_for_mode(mode)
 
-        # 6. 換気扇（ssr_room_fan）の夜間強制OFF＆昼間気温連動
-        if mode == "Night":
-            # 夜間は気温の判定を完全に無視して強制シャットダウン
-            self.logger.info("It is Night time. Room fan is forced OFF regardless of temperature.")
-            self.device.ssr_room_fan.off()
-        else:
-            # 朝・昼・夕の期間は、気温が上限を突破している時だけON
-            air_status = report.get('air_temp_status', 'none')
-            if air_status in ['warning', 'danger']:
-                self.logger.info(f"High room temperature detected ({air_status}) during active hours. Turning ON room fan.")
-                self.device.ssr_room_fan.on()
-            else:
-                self.logger.info(f"Room temperature is normal ({air_status}). Turning OFF room fan.")
-                self.device.ssr_room_fan.off()
+        # 6. 換気扇(room_fan) の制御
+        self._manage_room_fan(mode, report.get('air_temp_status'))
 
         # 7. レポートデータをDBに保存
         report_no = self.db.insert_report(report)
