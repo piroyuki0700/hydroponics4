@@ -5,7 +5,7 @@ Requires=mysql.service
 
 [Service]
 Type=simple
-User=pi
+#User=pi
 SupplementaryGroup="gpio i2c video"
 WorkingDirectory=/home/pi/work/hydroponics4
 

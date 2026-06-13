@@ -160,23 +160,42 @@ class HydroDevices:
             self.float_reserve = Button(config.PIN_FLOAT_RESERVE, **input_ok_false)
             self.water_flow = Button(config.PIN_WATER_FLOW, **input_ok_true)
 
-            # 初期化時に一度だけインスタンスを作る
-            # GPIO18なら board.D18 を指定。色の並びをGRB(標準)にするかRGBにするか指定可能
-            if 'board' in globals() and 'neopixel' in globals():
-                self.pixels = neopixel.NeoPixel(
-                    board.D18, # self.config.PIN_LED_WS2812 が 18 なら board.D18 にマッピング
-                    1, 
-                    brightness=1.0, 
-                    auto_write=True, 
-                    pixel_order=neopixel.RGB
-                )
-            else:
-                logger.info("NeoPixel support unavailable in this environment; skipping LED initialization.")
-
             logger.info(f"GPIO Devices initialized on {Device.pin_factory.__class__.__name__}")
         except Exception as e:
             logger.error(f"Failed to initialize actual GPIO devices: {e}")
             logger.warning("HydroDevices is running with dummy GPIO devices in this environment.")
+
+        # 💡 NeoPixel 初期化は GPIO デバイス初期化と分離し、権限エラーをより詳しく処理
+        self._init_neopixel()
+
+    def _init_neopixel(self):
+        """NeoPixel LED の初期化（権限エラーをハンドリング）"""
+        if 'board' not in globals() or 'neopixel' not in globals():
+            logger.info("NeoPixel libraries unavailable; LED support disabled.")
+            return
+
+        try:
+            self.pixels = neopixel.NeoPixel(
+                board.D18,
+                1, 
+                brightness=1.0, 
+                auto_write=True, 
+                pixel_order=neopixel.RGB
+            )
+            logger.info("NeoPixel LED initialized successfully.")
+        except PermissionError as e:
+            logger.warning(
+                f"NeoPixel LED requires elevated permissions: {e}\n"
+                f"💡 Workarounds:\n"
+                f"  1. Run with sudo: sudo python app.py\n"
+                f"  2. Add gpio group to systemd User: User=root in hydroponics4.service\n"
+                f"  3. Grant GPIO access: sudo usermod -aG gpio $(whoami)\n"
+                f"  LED control will be disabled but system continues."
+            )
+            self.pixels = DummyNeoPixel()
+        except Exception as e:
+            logger.error(f"NeoPixel initialization failed: {e}")
+            self.pixels = DummyNeoPixel()
         
     def _setup_factory(self):
         """UbuntuかRaspberry Piかを確実に判定してピンファクトリを切り替える"""
