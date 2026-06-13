@@ -14,6 +14,51 @@ IS_HARDWARE_OK = False
 class DummyW1ThermSensor:
     pass
 
+class DummyOutputDevice:
+    def __init__(self, pin=None, **kwargs):
+        self.pin = pin
+        self._value = 0.0
+
+    def on(self):
+        pass
+
+    def off(self):
+        pass
+
+    @property
+    def is_active(self):
+        return False
+
+    @property
+    def value(self):
+        return self._value
+
+    @value.setter
+    def value(self, value):
+        self._value = value
+
+
+class DummyPWMOutputDevice(DummyOutputDevice):
+    pass
+
+
+class DummyButton:
+    def __init__(self, pin=None, **kwargs):
+        self.pin = pin
+
+    @property
+    def is_active(self):
+        return False
+
+
+class DummyNeoPixel:
+    def __getitem__(self, index):
+        return (0, 0, 0)
+
+    def __setitem__(self, index, value):
+        pass
+
+
 # 💡 2. ラズパイ実機でのみ、実際のライブラリを一括インポート
 if os.path.exists("/proc/device-tree/model"):
     try:
@@ -67,59 +112,82 @@ class HydroDevices:
         input_ok_true = {'pull_up': None, 'active_state': True}
         input_ok_false = {'pull_up': None, 'active_state': False}
 
+        # エラー発生時のために全てのデバイスをダミーで初期化しておく（安全ガード）
+        self.ssr_sub_pump = DummyOutputDevice(config.PIN_SSR_SUB_PUMP)
+        self.ssr_room_fan = DummyOutputDevice(config.PIN_SSR_ROOM_FAN)
+        self.pump_main_a = DummyOutputDevice(config.PIN_PUMP_MAIN_A)
+        self.pump_main_b = DummyOutputDevice(config.PIN_PUMP_MAIN_B)
+        self.aeration = DummyOutputDevice(config.PIN_AERATION)
+        self.usb_reserve = DummyOutputDevice(config.PIN_USB_RESERVE)
+        self.fert_pump_1 = DummyOutputDevice(config.PIN_FERT_PUMP_1)
+        self.fert_pump_2 = DummyOutputDevice(config.PIN_FERT_PUMP_2)
+        self.fert_pump_3 = DummyOutputDevice(config.PIN_FERT_PUMP_3)
+        self.fert_pump_4 = DummyOutputDevice(config.PIN_FERT_PUMP_4)
+        self.water_valve = DummyOutputDevice(config.PIN_WATER_VALVE)
+        self.cooling_fan = DummyPWMOutputDevice(config.PIN_COOLING_FAN)
+
+        self.leak_detect = DummyButton(config.PIN_LEAK_DETECT)
+        self.water_check = DummyButton(config.PIN_WATER_CHECK)
+        self.float_main_top = DummyButton(config.PIN_FLOAT_MAIN_TOP)
+        self.float_main_bottom = DummyButton(config.PIN_FLOAT_MAIN_BOTTOM)
+        self.float_sub = DummyButton(config.PIN_FLOAT_SUB)
+        self.float_reserve = DummyButton(config.PIN_FLOAT_RESERVE)
+        self.water_flow = DummyButton(config.PIN_WATER_FLOW)
+
+        self.pixels = DummyNeoPixel()
+
         try:
             # --- 出力デバイス (OutputDevice) ---
             self.ssr_sub_pump = OutputDevice(config.PIN_SSR_SUB_PUMP)
             self.ssr_room_fan = OutputDevice(config.PIN_SSR_ROOM_FAN)
-            self.pump_main_a  = OutputDevice(config.PIN_PUMP_MAIN_A)
-            self.pump_main_b  = OutputDevice(config.PIN_PUMP_MAIN_B)
-            self.aeration     = OutputDevice(config.PIN_AERATION)
-            self.usb_reserve  = OutputDevice(config.PIN_USB_RESERVE)
-            self.fert_pump_1  = OutputDevice(config.PIN_FERT_PUMP_1)
-            self.fert_pump_2  = OutputDevice(config.PIN_FERT_PUMP_2)
-            self.fert_pump_3  = OutputDevice(config.PIN_FERT_PUMP_3)
-            self.fert_pump_4  = OutputDevice(config.PIN_FERT_PUMP_4)
-            self.water_valve  = OutputDevice(config.PIN_WATER_VALVE)
-            self.cooling_fan  = PWMOutputDevice(config.PIN_COOLING_FAN)
-            
+            self.pump_main_a = OutputDevice(config.PIN_PUMP_MAIN_A)
+            self.pump_main_b = OutputDevice(config.PIN_PUMP_MAIN_B)
+            self.aeration = OutputDevice(config.PIN_AERATION)
+            self.usb_reserve = OutputDevice(config.PIN_USB_RESERVE)
+            self.fert_pump_1 = OutputDevice(config.PIN_FERT_PUMP_1)
+            self.fert_pump_2 = OutputDevice(config.PIN_FERT_PUMP_2)
+            self.fert_pump_3 = OutputDevice(config.PIN_FERT_PUMP_3)
+            self.fert_pump_4 = OutputDevice(config.PIN_FERT_PUMP_4)
+            self.water_valve = OutputDevice(config.PIN_WATER_VALVE)
+            self.cooling_fan = PWMOutputDevice(config.PIN_COOLING_FAN)
+
             # --- 入力ボタン (Button) ---
-            self.leak_detect       = Button(config.PIN_LEAK_DETECT, **input_ok_true)
-            self.water_check       = Button(config.PIN_WATER_CHECK, **input_ok_true)
-            self.float_main_top    = Button(config.PIN_FLOAT_MAIN_TOP, **input_ok_false)
+            self.leak_detect = Button(config.PIN_LEAK_DETECT, **input_ok_true)
+            self.water_check = Button(config.PIN_WATER_CHECK, **input_ok_true)
+            self.float_main_top = Button(config.PIN_FLOAT_MAIN_TOP, **input_ok_false)
             self.float_main_bottom = Button(config.PIN_FLOAT_MAIN_BOTTOM, **input_ok_false)
-            self.float_sub         = Button(config.PIN_FLOAT_SUB, **input_ok_false)
-            self.float_reserve     = Button(config.PIN_FLOAT_RESERVE, **input_ok_false)
-            self.water_flow        = Button(config.PIN_WATER_FLOW, **input_ok_true)
+            self.float_sub = Button(config.PIN_FLOAT_SUB, **input_ok_false)
+            self.float_reserve = Button(config.PIN_FLOAT_RESERVE, **input_ok_false)
+            self.water_flow = Button(config.PIN_WATER_FLOW, **input_ok_true)
 
             # 初期化時に一度だけインスタンスを作る
             # GPIO18なら board.D18 を指定。色の並びをGRB(標準)にするかRGBにするか指定可能
-            self.pixels = neopixel.NeoPixel(
-                board.D18, # self.config.PIN_LED_WS2812 が 18 なら board.D18 にマッピング
-                1, 
-                brightness=1.0, 
-                auto_write=True, 
-                pixel_order=neopixel.RGB
-            )
+            if 'board' in globals() and 'neopixel' in globals():
+                self.pixels = neopixel.NeoPixel(
+                    board.D18, # self.config.PIN_LED_WS2812 が 18 なら board.D18 にマッピング
+                    1, 
+                    brightness=1.0, 
+                    auto_write=True, 
+                    pixel_order=neopixel.RGB
+                )
+            else:
+                logger.info("NeoPixel support unavailable in this environment; skipping LED initialization.")
 
             logger.info(f"GPIO Devices initialized on {Device.pin_factory.__class__.__name__}")
         except Exception as e:
-            logger.error(f"Failed to initialize GPIO devices: {e}")
+            logger.error(f"Failed to initialize actual GPIO devices: {e}")
+            logger.warning("HydroDevices is running with dummy GPIO devices in this environment.")
         
     def _setup_factory(self):
-        """UbuntuかRaspberry Piかを確実に判定してピン工場を切り替える"""
-        # ここで再度 import lgpio が走っても、上記(💡2)でキャッシュされた安全な
-        # モジュールが瞬時に再利用されるため、フリーズせずにスルーできます。
+        """UbuntuかRaspberry Piかを確実に判定してピンファクトリを切り替える"""
         from gpiozero import Device
+
         if Device.pin_factory is not None:
             return
 
         if os.path.exists("/proc/device-tree/model"):
-            try:
-                import lgpio
-                logger.info("Raspberry Pi native GPIO factory established.")
-                return 
-            except ImportError:
-                pass
+            logger.info("Raspberry Pi detected. Leaving gpiozero to choose the native pin factory.")
+            return
 
         try:
             from gpiozero.pins.mock import MockFactory
@@ -132,8 +200,11 @@ class HydroDevices:
         """緊急停止用：全ての OutputDevice を強制的にOFFにする"""
         for attr_name in dir(self):
             attr = getattr(self, attr_name)
-            if isinstance(attr, OutputDevice):
-                attr.off()
+            if hasattr(attr, 'off') and callable(getattr(attr, 'off')):
+                try:
+                    attr.off()
+                except Exception:
+                    pass
         self.update_led('off')  # LEDも消灯
         logger.warning("SAFETY: All OutputDevices have been turned OFF.")
 
