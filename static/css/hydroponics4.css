@@ -266,6 +266,7 @@ td.vmiddle {
 div.sensor_card_ios {
   width: 14.28% !important; /* 横に7枚ピッタリ並ぶように強制固定 */
   height: 100%;
+  float: left; /* iOS 含めた全環境で確実に横並びさせるため復帰 */
 }
 
 /* 🔄 Bootstrap 5 トグルスイッチの拡大設定（枠サイズのみ） */
