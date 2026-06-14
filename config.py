@@ -67,8 +67,8 @@ class Config:
     TDS_K_VALUE = float(os.getenv('TDS_K_VALUE', 1.0))
     
     # 💡 水圧センサー水位校正用定数の追加
-    VOLTAGE_EMPTY = float(os.getenv('VOLTAGE_EMPTY', 0.500))
-    VOLTAGE_FULL  = float(os.getenv('VOLTAGE_FULL', 4.500))
+    VOLTAGE_EMPTY = float(os.getenv('VOLTAGE_EMPTY', 0.001))
+    VOLTAGE_FULL  = float(os.getenv('VOLTAGE_FULL', 1.400))
 
     # CPUファン制御設定
     CPU_FAN_INTERVAL = float(os.getenv('CPU_FAN_INTERVAL', 10.0))     # 監視間隔（秒）

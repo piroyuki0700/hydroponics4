@@ -454,9 +454,8 @@ class HydroManager:
         picture_path_for_discord = None
         if now.hour in [int(h) for h in camera_hours if h is not None]:
             self.logger.info(f"Hourly camera schedule matched for {now.hour}:00. Capturing picture...")
-            # gevent のスレッドプールを使って重いカメラ処理を実行（結果が返ってくるまで非同期で待つ）
-            tp = gevent.get_hub().threadpool
-            cam_result = tp.apply(self.camera.capture, (False,)) # 引数はタプルで渡します
+            # gevent のスレッドプールではなく、現在のバックグラウンドタスク内で直接実行する
+            cam_result = self.camera.capture(False)
             if cam_result.get('success'):
                 picture_no = self.db.insert_picture({
                     'filename': cam_result.get('filename'),
@@ -938,11 +937,10 @@ class HydroManager:
         # 💡 撮影からフロント通知までをすべて行うバックグラウンド処理を定義
         def _camera_capture_task():
             try:
-                self.logger.info("Background task: Starting camera capture via threadpool...")
+                self.logger.info("Background task: Starting camera capture...")
                 
-                # gevent のスレッドプールを使って重いカメラ処理を実行（結果が返ってくるまで非同期で待つ）
-                tp = gevent.get_hub().threadpool
-                res = tp.apply(self.camera.capture, (True,)) # 引数はタプルで渡します
+                # gevent のスレッドプールではなく、現在のバックグラウンドタスク内で直接実行する
+                res = self.camera.capture(True)
                 success = bool(res.get('success'))
                 
                 # 2. 📸 撮影が終わったら、結果をイベント名 'tmp_picture' で一斉配信(broadcast)！
@@ -1406,6 +1404,19 @@ class HydroManager:
         self.device.ssr_room_fan.on() if control == 'on' else self.device.ssr_room_fan.off()
         return self.make_result(True, f"SSR ssr_room_fan:{control}")
 
+    def cmd_test_fert_pump(self, request):
+        control = request.get('option')
+        fert_num = request.get('extra')
+        if fert_num == 1:
+            self.device.fert_pump_1.on() if control == 'on' else self.device.fert_pump_1.off()
+        elif fert_num == 2:
+            self.device.fert_pump_2.on() if control == 'on' else self.device.fert_pump_2.off()
+        elif fert_num == 3:
+            self.device.fert_pump_3.on() if control == 'on' else self.device.fert_pump_3.off()
+        elif fert_num == 4:
+            self.device.fert_pump_4.on() if control == 'on' else self.device.fert_pump_4.off()
+        return self.make_result(True, f"fert num:{fert_num} pumps:{control}")
+    
     def cmd_test_water_valve(self, request):
         control = request.get('option')
         self.device.water_valve.on() if control == 'on' else self.device.water_valve.off()

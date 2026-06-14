@@ -1175,8 +1175,8 @@ function subPumpButtonClick(request, option="none") {
 //
 // デバッグ：汎用動作テスト
 //
-function debugButtonExec(debug_request="debug_echo", option="none") {
-  websocket_send({'command': debug_request, 'option': option});
+function debugButtonExec(debug_request="debug_echo", option="none", extra="none") {
+  websocket_send({'command': debug_request, 'option': option, 'extra': extra});
 }
 //
 // デバッグ：時間区分の変更

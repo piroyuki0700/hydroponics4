@@ -582,6 +582,22 @@
             <button onclick="debugButtonExec('test_water_valve', 'off')" class="btn btn-secondary command_button">Off</button>
           </span>
         </div>
+        <div class="mt-0">
+          <span class="border_debug">
+            <span class="small">Fert1:</span>
+            <button onclick="debugButtonExec('test_fert_pump', 'on', 1)" class="btn btn-secondary command_button">On</button>
+            <button onclick="debugButtonExec('test_fert_pump', 'off', 1 )" class="btn btn-secondary command_button">Off</button>
+            <span class="small ms-3">Fert2:</span>
+            <button onclick="debugButtonExec('test_fert_pump', 'on', 2)" class="btn btn-secondary command_button">On</button>
+            <button onclick="debugButtonExec('test_fert_pump', 'off', 2 )" class="btn btn-secondary command_button">Off</button> 
+            <span class="small ms-3">Fert3:</span>
+            <button onclick="debugButtonExec('test_fert_pump', 'on', 3)" class="btn btn-secondary command_button">On</button>
+            <button onclick="debugButtonExec('test_fert_pump', 'off', 3 )" class="btn btn-secondary command_button">Off</button> 
+            <span class="small ms-3">Fert4:</span>
+            <button onclick="debugButtonExec('test_fert_pump', 'on', 4)" class="btn btn-secondary command_button">On</button>
+            <button onclick="debugButtonExec('test_fert_pump', 'off', 4 )" class="btn btn-secondary command_button">Off</button>
+          </span>
+        </div>
         <textarea class="content_message border border-dark" id="debug_message"></textarea>
         <div class="mt-0">
           <button onclick="clearMessageClick()" class="btn btn-secondary command_button me-5">clear</button>
