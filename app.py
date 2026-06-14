@@ -36,7 +36,7 @@ from logging.handlers import RotatingFileHandler
 
 def setup_logger():
     logger = logging.getLogger() # ルートロガーを設定
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
     formatter = logging.Formatter('%(asctime)s: [%(levelname)s] %(name)s - %(message)s')
     
     # フォルダがない場合は作成

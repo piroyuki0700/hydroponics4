@@ -69,13 +69,32 @@ class HydroCamera:
         logger.info(f"Starting camera capture via command using {self.device_path}...")
         
         try:
-            # コマンドを実行（ログ出力を非表示にしてバックグラウンドで静かに実行）
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # コマンドを実行。失敗時は stdout/stderr をログへ残して原因解析を容易にする
+            completed = subprocess.run(
+                cmd,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
             result["success"] = True
             logger.info(f"Captured successfully via command: {filepath}")
+            if completed.stdout:
+                output_lines = completed.stdout.strip().splitlines()
+                if output_lines:
+                    logger.debug("Camera stdout: %s", " | ".join(output_lines[:3]))
             
         except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to capture image via command. Error: {e}")
+            stdout = e.stdout.strip() if e.stdout else ""
+            stderr = e.stderr.strip() if e.stderr else ""
+            stdout_snippet = " | ".join(stdout.splitlines()[:3]) if stdout else "<no stdout>"
+            stderr_snippet = " | ".join(stderr.splitlines()[:3]) if stderr else "<no stderr>"
+            logger.error(
+                "Failed to capture image via command. exit=%s stdout=%s stderr=%s",
+                e.returncode,
+                stdout_snippet,
+                stderr_snippet,
+            )
         except Exception as e:
             logger.error(f"Unexpected error during camera capture: {e}")
 
