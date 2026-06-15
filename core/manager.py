@@ -44,6 +44,10 @@ class PumpSwitcher:
             self.thread.join(timeout=1)
             self.thread = None
 
+        # 💡 停止時もcycle_callbackを通じてクライアントへ通知
+        if self.cycle_callback:
+            self.cycle_callback('cycle_stop', 0)
+
     def _loop(self):
         self.logger.info("Pump intermittent loop started (with recovery logic).")
         CHECK_DELAY = 30  # 循環判定までの待ち時間(秒)
@@ -678,6 +682,10 @@ class HydroManager:
         # 💡 狙い撃ちでメインポンプだけをOFF（ルームファンや給水バルブの運転を邪魔しない）
         self.device.pump_main_a.off()
         self.device.pump_main_b.off()
+        self.device.pump_sub.off()
+
+        # 💡 クライアント側にポンプ停止を即座に通知（カウントダウンを停止させる）
+        self._pump_cycle_status('auto_stop', 0)
 
     def stop(self):
         """安全停止処理：タイマーとポンプをすべて止める"""
@@ -1064,6 +1072,29 @@ class HydroManager:
         color = request.get('color')
         self.device.update_led(color)
         return self.make_result(True, f"led is changed to {color}.")
+
+    def cmd_force_fertilize(self, request):
+        """💡 デバッグ用：液肥の自動調整を強制実行（1日1回の縛りなし）"""
+        self.logger.info("DEBUG: Force fertilizer adjustment triggered!")
+
+        try:
+            # 1. スケジュール設定から各液肥ポンプの秒数を取得
+            # 通常設定の半分の秒数を計算（最低1秒保証）
+            f1_sec = max(1, int(self.schedule.get('fert1_seconds', 10)) // 2)
+            f2_sec = max(1, int(self.schedule.get('fert2_seconds', 10)) // 2)
+            f3_sec = max(1, int(self.schedule.get('fert3_seconds', 10)) // 2)
+            f4_sec = max(1, int(self.schedule.get('fert4_seconds', 10)) // 2)
+
+            self.logger.info(f"Force fertilize: Fert1={f1_sec}s, Fert2={f2_sec}s, Fert3={f3_sec}s, Fert4={f4_sec}s")
+
+            # 2. 💥 バックグラウンドタスクとして液肥シーケンスを起動（1日1回フラグはチェックしない）
+            self.socketio.start_background_task(self._fertilize_sequence_task, f1_sec, f2_sec, f3_sec, f4_sec)
+
+            return self.make_result(True, f"Fertilizer adjustment started! (F1:{f1_sec}s, F2:{f2_sec}s, F3:{f3_sec}s, F4:{f4_sec}s)")
+
+        except Exception as e:
+            self.logger.error(f"Error during force fertilize: {e}")
+            return self.make_result(False, f"Failed to start fertilizer adjustment: {e}")
 
     def cmd_measure_sensor(self, request):
         kind = request.get('sensor_kind')
