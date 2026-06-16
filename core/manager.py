@@ -682,7 +682,7 @@ class HydroManager:
         # 💡 狙い撃ちでメインポンプだけをOFF（ルームファンや給水バルブの運転を邪魔しない）
         self.device.pump_main_a.off()
         self.device.pump_main_b.off()
-        self.device.pump_sub.off()
+        self.device.ssr_sub_pump.off()
 
         # 💡 クライアント側にポンプ停止を即座に通知（カウントダウンを停止させる）
         self._pump_cycle_status('auto_stop', 0)
@@ -1088,7 +1088,7 @@ class HydroManager:
             self.logger.info(f"Force fertilize: Fert1={f1_sec}s, Fert2={f2_sec}s, Fert3={f3_sec}s, Fert4={f4_sec}s")
 
             # 2. 💥 バックグラウンドタスクとして液肥シーケンスを起動（1日1回フラグはチェックしない）
-            self.socketio.start_background_task(self._fertilize_sequence_task, f1_sec, f2_sec, f3_sec, f4_sec)
+            self.socketio.start_background_task(self._fertilize_sequence_task, f1_sec, f2_sec, f3_sec, f4_sec, True)
 
             return self.make_result(True, f"Fertilizer adjustment started! (F1:{f1_sec}s, F2:{f2_sec}s, F3:{f3_sec}s, F4:{f4_sec}s)")
 
@@ -1207,10 +1207,10 @@ class HydroManager:
             self.logger.info("Water level is sufficient. No refill needed.")
             return self.make_result(True, "水位は十分です。")
 
-    def _fertilize_sequence_task(self, f1_sec, f2_sec, f3_sec, f4_sec):
+    def _fertilize_sequence_task(self, f1_sec, f2_sec, f3_sec, f4_sec, skip_system_alive_check=False):
         try:
             def check_system_alive():
-                if not self.switcher.running:
+                if not self.switcher.running and not skip_system_alive_check:
                     self.device.fert_pump_1.off(); self.device.fert_pump_2.off()
                     self.device.fert_pump_3.off(); self.device.fert_pump_4.off()
                     raise RuntimeError("Fertilizer task aborted due to system shutdown.")
