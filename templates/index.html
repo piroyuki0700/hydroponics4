@@ -284,6 +284,11 @@
               <td colspan="5">
                 <button type="button" class="btn btn-success mx-4 py-1" onclick="scheduleCommitClick()"><i class="bi bi-check-lg fs-5 me-1"></i>反映する</button>
                 <button type="button" class="btn btn-danger  mx-4 py-1" onclick="scheduleCancelClick()"><i class="bi bi-x-lg fs-5 me-1"></i>元に戻す</button>
+                <span class="ms-5">処理切替タイミング：</span>
+                  <input class="input_number" type="text" value="0" name="minute_start">
+                  <input class="input_number" type="text" value="53" name="minute_stop">
+                  <input class="input_number" type="text" value="55" name="minute_refill">
+                </span>分
               </td>
             </tr>
           </tfoot>
@@ -602,12 +607,7 @@
         </div>
         <textarea class="content_message border border-dark" id="debug_message"></textarea>
         <div class="mt-0">
-          <button onclick="clearMessageClick()" class="btn btn-secondary command_button me-5">clear</button>
-          <span class="small">定時処理タイミング：
-          <input class="input_number" type="text" value="0" name="minute_start">
-          <input class="input_number" type="text" value="50" name="minute_stop">
-          <input class="input_number" type="text" value="55" name="minute_refill"></span>
-          <button onclick="debugTimeSpan()" class="btn btn-secondary command_button">変更</button>
+          <button onclick="clearMessageClick()" class="btn btn-secondary command_button">clear</button>
         </div>
       </div>
     </div>

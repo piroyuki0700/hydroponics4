@@ -398,7 +398,6 @@ function setValueBasic(data)
 function setValueSchedule(data)
 {
   // 時刻指定なしにしたいとき（マイナス値は無効として空文字にする処理）
-  // 廃止された time_spot 類を削除し、新しい項目（valve_open, valve_close）を追加しました
   const items = [
     "time_morning", "time_noon", "time_evening", "time_night",
     "camera1", "camera2", "camera3", "camera4", "camera5",
@@ -412,14 +411,14 @@ function setValueSchedule(data)
   }
 
   // 📝 テキスト入力欄・数値入力欄への値のセット
-  // 廃止された spot 関連を削除し、night_on/off、valve_open/close、fert1_seconds〜4_seconds、notify_time を網羅
-  const valItems = [
+   const valItems = [
     "time_morning", "time_noon", "time_evening", "time_night",
     "morning_on", "morning_off", "noon_on", "noon_off", "evening_on", "evening_off",
     "night_on", "night_off",
     "refill_max_seconds", "valve_open", "valve_close",
     "fert1_seconds", "fert2_seconds", "fert3_seconds", "fert4_seconds", "fert_adjust_hour",
     "camera1", "camera2", "camera3", "camera4", "camera5",
+    "minute_start", "minute_stop", "minute_refill"  ,
     "notify_time"
   ];
 
