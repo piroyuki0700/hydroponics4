@@ -6,6 +6,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
+    # バージョン情報
+    APP_VERSION = '2026/06/18'
+    GITHUB_URL = os.getenv('GITHUB_URL', 'https://github.com/username/repository')
+    GITHUB_REPO_NAME = os.getenv('GITHUB_REPO_NAME', 'repository')
+
     # Flask Settings
     SECRET_KEY = os.getenv('SECRET_KEY', 'default-secret-key')
     FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'false') == 'true'
@@ -75,9 +80,4 @@ class Config:
     CPU_FAN_HYSTERESIS = float(os.getenv('CPU_FAN_HYSTERESIS', 3.0))  # ヒステリシス（℃）
     CPU_FAN_SPEED_LOW = float(os.getenv('CPU_FAN_SPEED_LOW', 0.5))    # やや高い時のPWM出力 (0.0～1.0)
     CPU_FAN_SPEED_HIGH = float(os.getenv('CPU_FAN_SPEED_HIGH', 1.0))  # とても高い時のPWM出力 (0.0～1.0)
-
-    # バージョン情報
-    APP_VERSION = os.getenv('APP_VERSION', '----/--/--')
-    GITHUB_URL = os.getenv('GITHUB_URL', 'https://github.com/username/repository')
-    GITHUB_REPO_NAME = os.getenv('GITHUB_REPO_NAME', 'repository')
 
