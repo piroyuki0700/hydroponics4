@@ -1289,36 +1289,43 @@ class HydroManager:
         else:
             seconds = int(request.get('seconds', self.schedule.get('refill_max_seconds', 120)))
 
+        # 💡 各種初期値をローカル変数に保持
+        start_time = time.time()
+        start_level = self.device.read_water_level()
+        trigger = request.get('trigger', 'manual') # triggerがない場合は'manual'とみなす
+
         # ポンプをON
         self.device.ssr_sub_pump.on()
         self.logger.info(f"Subpump turned ON. Max timeout: {seconds} seconds.")
 
-        # 最大時間切れで止めるセーフティタイマー
-        self.subpump_timer = threading.Timer(seconds, self._subpump_stop_callback)
+        # 💥 変更: 最大時間切れ（タイムアウト）時に、DBへ記録を残して安全に止めるコールバックを定義
+        def _timeout_handler():
+            self.logger.warning(f"Subpump monitor: Max timeout ({seconds}s) reached! Forcing stop and logging.")
+            # タイムアウトした事実と開始時のステータスを渡して記録保存へ
+            self._stop_and_record_refill(trigger, start_time, start_level, "Timeout (Max seconds reached)")
+
+        # タイマーにはこのタイムアウトハンドラを登録
+        self.subpump_timer = threading.Timer(seconds, _timeout_handler)
         self.subpump_timer.start()
 
         def _subpump_monitor_task():
-            start_time = time.time()
-            start_level = self.device.read_water_level()
-            trigger = request.get('trigger', 'manual') # triggerがない場合は'manual'とみなす
             top_detect_counter = 0
 
-            # --- 💥 新機能: バックグラウンド時間差追肥ロジックの定義 ---
+            # --- バックグラウンド時間差追肥ロジックの定義 ---
             if request.get('is_auto_fertilize', False):
                 self.fertilized_today = True # 2重投入を防ぐため即座にフラグをロック
-                
                 # 各ミニポンプの動作秒数を設定から個別に取得（設定がなければデフォルト10秒）
                 f1_sec = int(self.schedule.get('fert1_seconds', 10))
                 f2_sec = int(self.schedule.get('fert2_seconds', 10))
                 f3_sec = int(self.schedule.get('fert3_seconds', 10))
                 f4_sec = int(self.schedule.get('fert4_seconds', 10))
-                
+
                 # メインの監視タスクを止めないよう、液肥シークエンス自体もさらに別タスクとして非同期に切り離す
                 # これにより、途中で満水になってサブポンプが止まっても、液肥は最後まで独立して回りきります！
                 self.socketio.start_background_task(self._fertilize_sequence_task, f1_sec, f2_sec, f3_sec, f4_sec)
 
-            while self.device.ssr_sub_pump.is_active:
-                # 💡 ここで1秒間、他のWeb通信へ道を譲ります（フリーズしません）
+            # 💡 ループ条件: ポンプがアクティブかつ、タイマーがまだ存在している（＝タイムアウトや手動停止していない）間
+            while self.device.ssr_sub_pump.is_active and self.subpump_timer is not None:
                 gevent.sleep(1.0)
                 
                 # A) メインタンクの上限フロートスイッチ判定
@@ -1344,7 +1351,9 @@ class HydroManager:
 
                 self.cmd_subpump_update(None) # 状態更新をフロントへ通知
 
-        # 💡 本物のOSスレッドは作らず、SocketIOの軽量タスクとして裏で安全に回します
+            self.logger.info("Subpump monitor task loop finished cleanly.")
+
+        # SocketIOの軽量タスクとして裏で安全に回します
         self.socketio.start_background_task(_subpump_monitor_task)
 
         # 状態更新をフロントへ通知
@@ -1353,8 +1362,13 @@ class HydroManager:
         return self.make_result(True, f"subpump started for max {seconds} seconds")
 
     def _stop_and_record_refill(self, trigger, start_time, start_level, result_status):
-        """フロートスイッチ検知による途中停止と、DBへの補充記録の保存"""
-        # ポンプを安全に停止
+        """フロートスイッチ、空焚き、手動、またはタイムアウトによる途中停止とDBへの補充記録保存"""
+        # 💥 2重記録を防ぐため、ロックの役割を持つタイマーの存在チェック
+        # (手動停止とタイムアウト、フロート検知が奇跡的なミリ秒単位で競合した際の安全弁)
+        if self.subpump_timer is None and not self.device.ssr_sub_pump.is_active:
+            return
+
+        # ポンプを安全に停止＆タイマークリア
         self._subpump_stop_callback()
         
         # 実際に動いていた秒数を計算
@@ -1364,7 +1378,6 @@ class HydroManager:
         self.logger.info(f"Refill ended. Duration: {elapsed_seconds}s. Level : {start_level} -> {end_level}%. Status: {result_status}")
         
         # DBに補充の歴史（ログ）を保存
-        # 💡 お使いのDBクラスのメソッド名（例: insert_refill_logなど）に合わせて調整してください
         try:
             self.db.insert_refill_record({
                 'duration_seconds': elapsed_seconds,
