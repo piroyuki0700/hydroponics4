@@ -424,5 +424,5 @@ class HydroSensors:
         level = (voltage - v_empty) / (v_full - v_empty) * 100.0
         
         # 0%〜100%の範囲を絶対に飛び出さないようにクリッピング
-        return round(max(0.0, min(100.0, level)), 1)
+        return round(max(0.0, level), 1)
 

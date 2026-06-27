@@ -1291,7 +1291,7 @@ class HydroManager:
 
         # 💡 各種初期値をローカル変数に保持
         start_time = time.time()
-        start_level = self.device.read_water_level()
+        start_level = self.sensors.read_water_level()
         trigger = request.get('trigger', 'manual') # triggerがない場合は'manual'とみなす
 
         # ポンプをON
@@ -1374,7 +1374,7 @@ class HydroManager:
         # 実際に動いていた秒数を計算
         end_time = time.time()
         elapsed_seconds = int(end_time - start_time)
-        end_level = self.device.read_water_level()
+        end_level = self.sensors.read_water_level()
         self.logger.info(f"Refill ended. Duration: {elapsed_seconds}s. Level : {start_level} -> {end_level}%. Status: {result_status}")
         
         # DBに補充の歴史（ログ）を保存
