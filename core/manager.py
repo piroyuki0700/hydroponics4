@@ -106,17 +106,11 @@ class PumpSwitcher:
         self.device.pump_main_a.off()
         self.device.pump_main_b.off()
 
-
 class HydroManager:
-    MINUTE_START = 0
-    MINUTE_STOP = 50
-    MINUTE_REFILL = 55
+    # 水の補充前の水位確認回数
     REFILL_CONFIRM_COUNT = 3
-    
-    # 💡 新機能用定数
-    FAN_TEMP_ON = 40.0            # 空冷ファンONの閾値(℃)
-    FAN_TEMP_OFF = 38.0           # 空冷ファンOFFの閾値(℃)
-    FLOW_LEAK_THRESHOLD = 10       # バルブ閉期間中の異常流水判定パルス数
+    # バルブ閉期間中の異常流水判定パルス数
+    FLOW_LEAK_THRESHOLD = 10
     
     def __init__(self, config, db, device, sensors, camera, socketio):
         self.config = config
@@ -231,7 +225,7 @@ class HydroManager:
 
         # --- 💨 エアレーションの判定 ---
         # 00分〜50分の間であればON、それ以外（50分〜00分の間）ならOFF
-        if 0 <= now.minute < self.MINUTE_STOP:
+        if 0 <= now.minute < self.schedule.get('minute_stop'):
             self.logger.info("Current time is within active window. Turning ON aeration.")
             self.device.aeration.on()
             # ポンプの間間欠運転も即座にスタート
@@ -387,17 +381,17 @@ class HydroManager:
         m = now.minute
 
         # 1. 次の目標の「分」と、その時に実行したい「関数（処理）」のペアを決定
-        if m < self.MINUTE_START or self.MINUTE_REFILL <= m:
+        if m < self.schedule.get('minute_start') or self.schedule.get('minute_refill') <= m:
             self.logger.info("Current time is in stop window. Next sequence will be START at the next hour.")
-            next_m = self.MINUTE_START
+            next_m = self.schedule.get('minute_start')
             next_task = self._handle_start
-        elif m < self.MINUTE_STOP:
+        elif m < self.schedule.get('minute_stop'):
             self.logger.info("Current time is in active window. Next sequence will be STOP at 50 minutes.")
-            next_m = self.MINUTE_STOP
+            next_m = self.schedule.get('minute_stop')
             next_task = self._handle_stop
         else:
             self.logger.info("Current time is in refill window. Next sequence will be REFILL at 55 minutes.")
-            next_m = self.MINUTE_REFILL
+            next_m = self.schedule.get('minute_refill')
             next_task = self._handle_refill
 
         # 2. 次の正確な発火時刻を計算
@@ -1465,12 +1459,6 @@ class HydroManager:
         control = request.get('option')
         self.device.water_valve.on() if control == 'on' else self.device.water_valve.off()
         return self.make_result(True, f"Water valve:{control}")
-
-    def cmd_debug_time_span(self, request):
-        self.MINUTE_START = int(request.get('minute_start', self.MINUTE_START))
-        self.MINUTE_STOP = int(request.get('minute_stop', self.MINUTE_STOP))
-        self.MINUTE_REFILL = int(request.get('minute_refill', self.MINUTE_REFILL))
-        return self.make_result(True, f"changed time span to {self.MINUTE_START}-{self.MINUTE_STOP}-{self.MINUTE_REFILL}")
 
     def debug_echo(self, request):
         return self.make_result(True, "echo from web socket server.")
