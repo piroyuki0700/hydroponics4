@@ -1167,8 +1167,8 @@ function debugButtonMeasure(sensor_kind) {
 //
 // デバッグ：サブポンプ動作
 //
-function subPumpButtonClick(request, option="none") {
-  websocket_send({'command': 'subpump_' + request, 'option': option});
+function subPumpButtonClick(request, trigger="none") {
+  websocket_send({'command': 'subpump_' + request, 'trigger': trigger});
 }
 
 //

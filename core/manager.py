@@ -1149,9 +1149,9 @@ class HydroManager:
             self.logger.info("Auto refill is disabled in settings.")
             return self.make_result(False, "refill is disabled.")
 
-        option = request.get('option')
-        if option == 'must':
-            # 'must' オプション：上限スイッチが感知（満水ではない）場合に補充
+        option = request.get('trigger')
+        if option == 'manual_forced':
+            # 'manual_forced' オプション：上限スイッチが感知（満水ではない）場合に補充
             perform_refill = not self.device.float_main_top.is_active
         else:
             # 通常：下限スイッチが感知（水切れしている）場合に補充
@@ -1288,7 +1288,7 @@ class HydroManager:
         # 💡 各種初期値をローカル変数に保持
         start_time = time.time()
         start_level = self.sensors.read_water_level()
-        trigger = request.get('trigger', 'manual') # triggerがない場合は'manual'とみなす
+        trigger = request.get('trigger', 'unknown') # triggerがない場合は'unknown'で記録
 
         # ポンプをON
         self.device.ssr_sub_pump.on()
