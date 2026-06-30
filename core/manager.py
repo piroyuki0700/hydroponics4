@@ -214,7 +214,7 @@ class HydroManager:
         # 2. 起動時にまず一度バルブの開閉状態と漏水監視タスクの状態を正しく初期化
         self._manage_leak_detection_task()
 
-        # 3. 次の00分、50分、55分に向けてタイマーを予約
+        # 3. 次のタイミングに向けてタイマーを予約
         self._set_next_sequence()
 
     def sync_hardware_now(self):
@@ -224,8 +224,7 @@ class HydroManager:
         self.logger.info(f"Syncing hardware status for current time: {now.strftime('%H:%M:%S')} (Mode: {mode})")
 
         # --- 💨 エアレーションの判定 ---
-        # 00分〜50分の間であればON、それ以外（50分〜00分の間）ならOFF
-        if 0 <= now.minute < self.schedule.get('minute_stop'):
+        if self.schedule.get('minute_start') <= now.minute < self.schedule.get('minute_stop'):
             self.logger.info("Current time is within active window. Turning ON aeration.")
             self.device.aeration.on()
             # ポンプの間間欠運転も即座にスタート
@@ -381,17 +380,20 @@ class HydroManager:
         m = now.minute
 
         # 1. 次の目標の「分」と、その時に実行したい「関数（処理）」のペアを決定
-        if m < self.schedule.get('minute_start') or self.schedule.get('minute_refill') <= m:
-            self.logger.info("Current time is in stop window. Next sequence will be START at the next hour.")
-            next_m = self.schedule.get('minute_start')
+        minute_start = self.schedule.get('minute_start')
+        minute_stop = self.schedule.get('minute_stop')
+        minute_refill = self.schedule.get('minute_refill')
+        if m < minute_start or minute_refill <= m:
+            self.logger.info(f"Current time is in stop window. Next sequence will be START at {minute_start} minutes.")
+            next_m = minute_start
             next_task = self._handle_start
-        elif m < self.schedule.get('minute_stop'):
-            self.logger.info("Current time is in active window. Next sequence will be STOP at 50 minutes.")
-            next_m = self.schedule.get('minute_stop')
+        elif m < minute_stop:
+            self.logger.info(f"Current time is in active window. Next sequence will be STOP at {minute_stop} minutes.")
+            next_m = minute_stop
             next_task = self._handle_stop
         else:
-            self.logger.info("Current time is in refill window. Next sequence will be REFILL at 55 minutes.")
-            next_m = self.schedule.get('minute_refill')
+            self.logger.info(f"Current time is in refill window. Next sequence will be REFILL at {minute_refill} minutes.")
+            next_m = minute_refill
             next_task = self._handle_refill
 
         # 2. 次の正確な発火時刻を計算
@@ -435,7 +437,7 @@ class HydroManager:
             self.fertilized_today = False
 
         # --- 💨 エアレーション（ブクブク）の開始 ---
-        self.logger.info("Turning ON aeration for 50 minutes.")
+        self.logger.info("Turning ON aeration for active window.")
         self.device.aeration.on()
 
         # 1. 最新のセンサー読み込み
@@ -667,7 +669,7 @@ class HydroManager:
             self.usb_reserve_timer = None
 
     def _handle_stop(self):
-        """50分の処理：すべてのメインポンプとエアレーションを個別に停止（換気扇・バルブは維持）"""
+        """minute_stop分の処理：すべてのメインポンプとエアレーションを個別に停止（換気扇・バルブは維持）"""
         now = datetime.now()
         self.logger.info("Sequence STOP: Turning off main pumps and aeration.")
         self.switcher.stop()
@@ -1374,10 +1376,9 @@ class HydroManager:
         # DBに補充の歴史（ログ）を保存
         try:
             self.db.insert_refill_record({
-                'duration_seconds': elapsed_seconds,
-                'status': result_status,
                 'on_seconds': elapsed_seconds,
                 'trigger': trigger,
+                'result_status': result_status,
                 'level_before': start_level,
                 'level_after': end_level,
                 'main_top': self.device.float_main_top.is_active,

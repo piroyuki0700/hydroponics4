@@ -221,6 +221,8 @@ CREATE TABLE `refill_record` (
   
   -- 起動トリガー（例: 'schedule', 'manual'）
   `trigger` VARCHAR(16) DEFAULT NULL,
+  -- 結果の状態
+  `result_status` VARCHAR(32) DEFAULT NULL,
   
   -- 水圧計による参考水位（給水前後）
   `level_before` DECIMAL(4,1) DEFAULT NULL,
