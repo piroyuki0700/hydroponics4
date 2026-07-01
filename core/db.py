@@ -233,7 +233,7 @@ class HydroDB:
     def get_pump_status(self):
         row = self.getone('pump_status')
         if not row:
-            return {'pump_status': 'manual_stop', 'seconds': 0}
+            return {'status': 'manual_stop', 'seconds': 0}
         end = datetime.strptime(row.get('end_time'), '%Y/%m/%d %H:%M:%S') if row.get('end_time') else None
         seconds = 0
         if end:
@@ -241,7 +241,7 @@ class HydroDB:
             if seconds < 0:
                 seconds = 0
                 row['status'] = 'error_stop'
-        return {'pump_status': row.get('status', 'manual_stop'), 'seconds': seconds}
+        return {'status': row.get('status', 'manual_stop'), 'seconds': seconds}
 
     def insert_picture(self, data):
         return self.insert('picture', data)

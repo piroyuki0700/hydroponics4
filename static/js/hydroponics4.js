@@ -483,12 +483,6 @@ function setValuePumpStatus(data)
       // 時間がわからないのでカウントダウン更新はしない
       return;
 
-    case 'auto_stop':
-      if (pumpInfoEl) pumpInfoEl.textContent = '待機中'; // 👈 '動作モード' から '待機中' へ変更
-      if (cycleIconEl) cycleIconEl.classList.remove('bi-spin');
-      pump_active = false;
-      break;
-
     case 'cycle_start':
       if (pumpInfoEl) pumpInfoEl.textContent = 'オート動作中';
       if (cycleIconEl) cycleIconEl.classList.add('bi-spin');
@@ -507,6 +501,7 @@ function setValuePumpStatus(data)
       pump_active = true;
       break;
 
+    case 'auto_stop':
     case 'manual_stop':
     default:
       if (pumpInfoEl) pumpInfoEl.textContent = '待機中'; // 👈 '動作モード' から '待機中' へ変更
