@@ -1166,7 +1166,14 @@ class HydroManager:
                 
                 # 💡 リクエストに秒数を上書きして共通スタート関数を呼び出す
                 request['seconds'] = max_seconds
-                request['is_auto_refill'] = True # 自動補充フラグを仕込む
+                # 通常のスケジュール起動なら自動補充として扱うが、
+                # 強制（manual_forced）で呼ばれた場合は「自動扱い」にせず
+                # 液肥投入も行わないよう明示する
+                if option == 'manual_forced':
+                    request['is_auto_refill'] = False
+                    request['is_auto_fertilize'] = False
+                else:
+                    request['is_auto_refill'] = True # 自動補充フラグを仕込む
 
                 # 💡 自動補充の開始時に、液肥を同時に投入するかどうかの厳格な判定
                 # A) 既に今日1回追肥を行っている場合はスキップ（トラブル時の濃縮防止セーフティ）
