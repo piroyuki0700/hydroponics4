@@ -126,13 +126,13 @@ class HydroDB:
                 params = []
                 for key in keys:
                     if key in data and key != 'no':
-                        columns.append(key)
+                        columns.append(f"`{key}`")
                         values.append('?')
                         params.append(data[key])
                 if not columns:
                     cur.close()
                     return -1
-                sql = f"INSERT INTO {table} ({','.join(columns)}) VALUES ({','.join(values)})"
+                sql = f"INSERT INTO `{table}` ({','.join(columns)}) VALUES ({','.join(values)})"
                 cur.execute(sql, params)
                 lastrowid = cur.lastrowid
                 cur.close()
@@ -152,12 +152,12 @@ class HydroDB:
                 params = []
                 for key in keys:
                     if key in data and key != 'no':
-                        assignments.append(f"{key} = ?")
+                        assignments.append(f"`{key}` = ?")
                         params.append(data[key])
                 if not assignments:
                     cur.close()
                     return False
-                sql = f"UPDATE {table} SET {', '.join(assignments)} WHERE no = 1"
+                sql = f"UPDATE `{table}` SET {', '.join(assignments)} WHERE no = 1"
                 cur.execute(sql, params)
                 cur.close()
                 self.conn.commit()
