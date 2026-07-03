@@ -161,6 +161,9 @@ CREATE TABLE `report` (
   
   -- 照度
   `brightness` DECIMAL(6,1) DEFAULT NULL COMMENT '照度',
+
+  -- 水流パルス数
+  `water_pulses` INT DEFAULT NULL COMMENT '前回レポートからの水流パルス数',
   
   -- 写真テーブルの no と紐付け
   `picture_no` INT DEFAULT NULL,

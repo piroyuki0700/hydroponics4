@@ -481,9 +481,9 @@ class HydroManager:
         v_close = self.schedule.get('valve_close')
         
         # 前回チェック時（1時間前）からのパルス増加量を算出
-        current_pulses = self.flow_count
-        diff_pulses = current_pulses - self.last_flow_count
-        self.last_flow_count = current_pulses # 次回のために現在の値を記録
+        diff_pulses = self.flow_count - self.last_flow_count
+        self.last_flow_count = self.flow_count # 次回のために現在の値を記録
+        report['water_pulses'] = diff_pulses
 
         if v_open is not None and v_close is not None:
             # 1時間前の時点で「開いていた期間」が終わるタイミング（例: 閉じる直前、または開放期間の1時間ごと経過時）
