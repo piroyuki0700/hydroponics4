@@ -255,11 +255,17 @@
             <tr>
               <td class="vmiddle">カメラ撮影</td>
               <td colspan="4">
-                <input class="input_number" name="camera1" id="camera1" type="text" value=""> 時、
-                <input class="input_number" name="camera2" type="text" value=""> 時、
-                <input class="input_number" name="camera3" type="text" value=""> 時、
-                <input class="input_number" name="camera4" type="text" value=""> 時、
-                <input class="input_number" name="camera5" type="text" value=""> 時
+                <div class="form-check form-switch d-inline-block align-middle me-2">
+                  <input class="form-check-input" type="checkbox" role="switch" id="camera_active_switch" name="camera_active" value="1">
+                </div>
+                撮影有効
+                <span class="ms-3">
+                  <input class="input_number" name="camera1" id="camera1" type="text" value=""> 時、
+                  <input class="input_number" name="camera2" type="text" value=""> 時、
+                  <input class="input_number" name="camera3" type="text" value=""> 時、
+                  <input class="input_number" name="camera4" type="text" value=""> 時、
+                  <input class="input_number" name="camera5" type="text" value=""> 時
+                </span>
               </td>
             </tr>
             <tr>

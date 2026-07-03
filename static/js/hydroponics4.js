@@ -438,7 +438,7 @@ function setValueSchedule(data)
   // 🔄 トグルスイッチ（チェックボックス）のON/OFF制御
   // 新しい「fert_adjust（液肥の自動調整）」を追加しました
   const toggleItems = [
-    'schedule_active', 'room_fan_active', 'nightly_active', 
+    'schedule_active', 'room_fan_active', 'nightly_active', 'camera_active',
     'refill_active', 'fert_adjust_active', 'notify_active', 'emergency_active'
   ];
 
@@ -753,7 +753,7 @@ function scheduleCommitClick() {
   // トグルスイッチ（チェックボックス）の確定処理
   // FormDataはチェックの外れているスイッチの値を送信しない性質があるため、ここで"1"または"0"を確定させます
   const toggles = [
-    "schedule_active", "room_fan_active", "nightly_active", 
+    "schedule_active", "room_fan_active", "nightly_active", "camera_active",
     "refill_active", "fert_adjust_active", "notify_active", "emergency_active"
   ];
   

@@ -69,6 +69,8 @@ CREATE TABLE `setting_schedule` (
   `fert_adjust_active` BOOLEAN DEFAULT FALSE, -- 液肥調整の有効化
   `fert_adjust_hour` INT DEFAULT 12, -- 液肥調整時刻（時）
 
+  -- カメラ撮影設定
+  `camera_active` BOOLEAN DEFAULT TRUE,
   -- カメラ撮影タイミング（時）
   `camera1` INT DEFAULT 8, `camera2` INT DEFAULT 10, `camera3` INT DEFAULT 12, `camera4` INT DEFAULT 14, `camera5` INT DEFAULT 16,
   
@@ -91,7 +93,6 @@ CREATE TABLE `setting_schedule` (
 
 -- 初期データ
 INSERT INTO `setting_schedule` (`no`) VALUES (1) ON DUPLICATE KEY UPDATE `no` = 1;
-
 
 -- センサーしきい値設定
 DROP TABLE IF EXISTS `setting_sensor_limit`;

@@ -258,7 +258,7 @@ class HydroManager:
         self._manage_room_fan(mode)
 
     def _manage_room_fan(self, mode, air_status=None):
-        if int(self.schedule.get('room_fan_active', 0)) != 1:
+        if not bool(int(self.schedule.get('room_fan_active', 0))):
             self.logger.info("Room fan is set to inactive in schedule. Ensuring it is OFF.")
             self.device.ssr_room_fan.off()
             return
@@ -453,7 +453,9 @@ class HydroManager:
         ]
         
         picture_path_for_discord = None
-        if now.hour in [int(h) for h in camera_hours if h is not None]:
+        camera_active = bool(int(self.schedule.get('camera_active', 0)))
+
+        if camera_active and now.hour in [int(h) for h in camera_hours if h is not None]:
             self.logger.info(f"Hourly camera schedule matched for {now.hour}:00. Capturing picture...")
             # gevent のスレッドプールではなく、現在のバックグラウンドタスク内で直接実行する
             cam_result = self.camera.capture(False)
@@ -512,7 +514,8 @@ class HydroManager:
                     self.device.water_valve.on()
 
                     # 💡 さらに、もし今がちょうど水開けのタイミングだったら、予備USB出力も連動して30秒間ONにする特別な処理を追加
-                    if int(v_open) == now.hour and self.schedule.get('nightly_active', '0') == '1':
+                    nightly_active = bool(int(self.schedule.get('nightly_active', 0)))
+                    if int(v_open) == now.hour and nightly_active:
                         self.logger.info(f"Water window started ({now.hour}h). Activating hot water purge via USB Reserve for 30s!")
                         
                         # 予備USB出力をON
@@ -1178,7 +1181,7 @@ class HydroManager:
     def cmd_subpump_refill(self, request):
         """自動・手動共通の補充要求判定ハンドラ"""
         # 💡 設定値のチェック（1のとき有効、0のとき無効と仮定。条件の反転を修正）
-        if not int(self.schedule.get('refill_active', 0)):
+        if not bool(int(self.schedule.get('refill_active', 0))):
             self.logger.info("Auto refill is disabled in settings.")
             return self.make_result(False, "refill is disabled.")
 
@@ -1191,6 +1194,10 @@ class HydroManager:
             perform_refill = not self.device.float_main_bottom.is_active
 
         if perform_refill:
+            # 💡 水の補充を始める前に給水バルブを開ける
+            # 閉じるのは定時処理から実施。
+            self.device.water_valve.on()
+
             if self.device.float_sub.is_active: # サブタンクに水があるか
                 self.logger.info("Water level low. Starting subpump refill sequence...")
                 
@@ -1236,7 +1243,7 @@ class HydroManager:
             else:
                 message = "水位低下していますが、サブタンクの水がありません。"
                 self.logger.warning(message)
-                if int(self.schedule.get('emergency_active', 0)):
+                if bool(int(self.schedule.get('emergency_active', 0))):
                     self.notifier.send_emergency(message)
                 return self.make_result(False, message)
         else:
@@ -1381,7 +1388,7 @@ class HydroManager:
                 if not self.device.float_sub.is_active:
                     self.logger.warning("Subpump monitor: Subtank empty. Stopping pump.")
                     self._stop_and_record_refill(trigger, start_time, start_level, "Aborted (Subtank empty)")
-                    if int(self.schedule.get('emergency_active', 0)):
+                    if bool(int(self.schedule.get('emergency_active', 0))):
                         self.notifier.send_emergency("【警告】自動補充中にサブタンクが空になりました。")
                     break
 
