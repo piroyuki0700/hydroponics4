@@ -78,7 +78,8 @@ class PumpSwitcher:
                     self.logger.warning(f"Circulation failure detected on {pump_name}! Switching to {backup_name}.")
                     target_pump.off()
                     backup_pump.on()
-                    self.notifier.send_emergency(f"【警告】{pump_name}の循環不全。{backup_name}に切り替えました。")
+                    if bool(int(self.schedule.get('emergency_active', 0))):
+                        self.notifier.send_emergency(f"【警告】{pump_name}の循環不全。{backup_name}に切り替えました。")
                     if self.event.wait(max(0, self.ontime - CHECK_DELAY)): break
                 else:
                     if self.ontime > CHECK_DELAY:
@@ -465,6 +466,12 @@ class HydroManager:
                 picture_path_for_discord = cam_result.get('filepath')
                 self.logger.info(f"Auto hourly picture saved to DB (No.{picture_no})")
             else:
+                # 定時撮影の失敗は全クライアントへ broadcast で報告
+                msg = f"Auto hourly picture capture failed: {cam_result.get('filename','')}"
+                stderr = cam_result.get('stderr')
+                if stderr:
+                    msg += "\n" + stderr
+                self.broadcast('server_log', {'message': msg, 'datetime': now.strftime('%Y/%m/%d %H:%M:%S')})
                 self.logger.error("Auto hourly picture capture failed.")
 
         # 3. 給水用電磁ボールバルブ（water_valve）の明け方定時開閉判定
@@ -955,8 +962,34 @@ class HydroManager:
                     'tmp_picture_name': res.get('filename', ''),
                     'tmp_picture_taken': res.get('taken_at', '')
                 }
-                self.broadcast('tmp_picture', payload)
-                self.logger.info("Background task: Camera capture completed and broadcasted.")
+
+                # 依頼クライアントがわかれば、そのクライアントだけに送信（broadcast は避ける）
+                sid = request.get('_client_sid') if isinstance(request, dict) else None
+                try:
+                    if sid:
+                        self.socketio.emit('tmp_picture', self._clean_dict(payload), room=sid)
+                    else:
+                        self.broadcast('tmp_picture', payload)
+                except Exception:
+                    # 失敗したらフォールバックで broadcast
+                    self.broadcast('tmp_picture', payload)
+
+                # 撮影失敗時は依頼クライアントのデバッグ領域へ通知（サーバーログとして表示させる）
+                if not success:
+                    msg = f"Camera capture failed (tmp): {res.get('filename','')}."
+                    stderr = res.get('stderr')
+                    if stderr:
+                        msg += "\n" + stderr
+                    log_payload = {'message': msg, 'datetime': datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
+                    try:
+                        if sid:
+                            self.socketio.emit('server_log', self._clean_dict(log_payload), room=sid)
+                        else:
+                            self.broadcast('server_log', log_payload)
+                    except Exception:
+                        self.broadcast('server_log', log_payload)
+
+                self.logger.info("Background task: Camera capture completed and notified.")
                 
             except Exception as e:
                 self.logger.error(f"Error in camera native background task: {e}", exc_info=True)
@@ -1149,8 +1182,8 @@ class HydroManager:
             self.logger.info("Auto refill is disabled in settings.")
             return self.make_result(False, "refill is disabled.")
 
-        option = request.get('trigger')
-        if option == 'manual_forced':
+        trigger = request.get('trigger')
+        if trigger == 'manual_forced':
             # 'manual_forced' オプション：上限スイッチが感知（満水ではない）場合に補充
             perform_refill = not self.device.float_main_top.is_active
         else:
@@ -1169,7 +1202,7 @@ class HydroManager:
                 # 通常のスケジュール起動なら自動補充として扱うが、
                 # 強制（manual_forced）で呼ばれた場合は「自動扱い」にせず
                 # 液肥投入も行わないよう明示する
-                if option == 'manual_forced':
+                if trigger == 'manual_forced':
                     request['is_auto_refill'] = False
                     request['is_auto_fertilize'] = False
                 else:

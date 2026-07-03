@@ -108,6 +108,12 @@ def handle_connect(auth=None):
 @socketio.on('command')
 def handle_command(json_data):
     logger.debug(f"Received command: {json_data}")
+    # 送信元クライアントの sid をコマンドデータに乗せて manager に渡す
+    try:
+        json_data = dict(json_data) if json_data else {}
+        json_data['_client_sid'] = request.sid
+    except Exception:
+        pass
     # managerに処理を委譲。結果はボタンを押した本人だけに自動で返却される
     response = manager.handle_request(json_data)
     return response

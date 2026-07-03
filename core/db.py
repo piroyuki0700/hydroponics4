@@ -205,8 +205,8 @@ class HydroDB:
         """最新3件の給水履歴を改行で連結した1本の文字列としてフロントに返す"""
         dic_array = self.getlatest('refill_record', 3)
         
-        # 3件のログ文字列をリスト化
-        records_list = [self.make_refill_record_string(data) for data in dic_array]
+        # 3件のログ文字列をリスト化。新しい履歴が下に来るよう、古い順に並べる。
+        records_list = [self.make_refill_record_string(data) for data in reversed(dic_array)]
         
         # 💡 サーバー側で最初から改行コードで合体させる（末尾にも改行を付与）
         joined_string = "\n".join(records_list) + "\n" if records_list else ""

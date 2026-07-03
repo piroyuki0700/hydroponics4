@@ -2,12 +2,15 @@ import os
 import time
 import logging
 import subprocess
+from types import SimpleNamespace
 import shutil
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 class HydroCamera:
+    MAX_CAPTURE_ATTEMPTS = 3
+
     def __init__(self, config):
         self.config = config
         self.device_path = self._detect_device_path()
@@ -67,9 +70,54 @@ class HydroCamera:
             return result
 
         logger.info(f"Starting camera capture via command using {self.device_path}...")
-        
+
+        for attempt in range(self.MAX_CAPTURE_ATTEMPTS):
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                except Exception as e:
+                    logger.warning(f"Failed to remove stale capture file before retry: {e}")
+
+            success = False
+            completed = None
+            try:
+                success, completed = self._capture_once(cmd, filepath)
+                if success:
+                    result["success"] = True
+                    logger.info(f"Captured successfully via command: {filepath}")
+                    if completed and completed.stdout:
+                        output_lines = completed.stdout.strip().splitlines()
+                        if output_lines:
+                            logger.debug("Camera stdout: %s", " | ".join(output_lines[:3]))
+                    break
+            finally:
+                # 成功しなかった場合は生成されたファイル（もしあれば）を削除しておく
+                if not success and os.path.exists(filepath):
+                    try:
+                        os.remove(filepath)
+                        logger.info(f"Removed failed capture file: {filepath}")
+                    except Exception as e:
+                        logger.warning(f"Failed to remove failed capture file: {e}")
+
+            if attempt < self.MAX_CAPTURE_ATTEMPTS - 1:
+                logger.info(f"Retrying camera capture in 1 second... ({attempt + 1}/{self.MAX_CAPTURE_ATTEMPTS})")
+                time.sleep(1)
+
+        if not result["success"]:
+            # 可能であればコマンドの stdout/stderr を返しておく（呼び出し元がユーザー通知に使える）
+            if completed is not None:
+                try:
+                    result["stdout"] = completed.stdout
+                    result["stderr"] = completed.stderr
+                except Exception:
+                    pass
+            logger.error("Camera capture failed after retries: %s", filepath)
+
+        return result
+
+    def _capture_once(self, cmd, filepath):
+        """1回分のキャプチャ実行と、ファイル生成・サイズ確認を行う。"""
         try:
-            # コマンドを実行。失敗時は stdout/stderr をログへ残して原因解析を容易にする
             completed = subprocess.run(
                 cmd,
                 check=True,
@@ -77,25 +125,28 @@ class HydroCamera:
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            result["success"] = True
-            logger.info(f"Captured successfully via command: {filepath}")
-            if completed.stdout:
-                output_lines = completed.stdout.strip().splitlines()
-                if output_lines:
-                    logger.debug("Camera stdout: %s", " | ".join(output_lines[:3]))
-            
-        except subprocess.CalledProcessError as e:
-            stdout = e.stdout.strip() if e.stdout else ""
-            stderr = e.stderr.strip() if e.stderr else ""
-            stdout_snippet = " | ".join(stdout.splitlines()[:3]) if stdout else "<no stdout>"
-            stderr_snippet = " | ".join(stderr.splitlines()[:3]) if stderr else "<no stderr>"
-            logger.error(
-                "Failed to capture image via command. exit=%s stdout=%s stderr=%s",
-                e.returncode,
-                stdout_snippet,
-                stderr_snippet,
-            )
-        except Exception as e:
-            logger.error(f"Unexpected error during camera capture: {e}")
 
-        return result
+            if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+                return True, completed
+
+            logger.warning(
+                "Capture command completed but output file was not created or was empty: %s",
+                filepath,
+            )
+            return False, completed
+
+        except subprocess.CalledProcessError as e:
+            stdout = e.stdout if e.stdout else ""
+            stderr = e.stderr if e.stderr else ""
+            # エラー時は stdout/stderr を全文ログに残す
+            logger.error(
+                "Failed to capture image via command. exit=%s\nSTDOUT:\n%s\nSTDERR:\n%s",
+                e.returncode,
+                stdout,
+                stderr,
+            )
+            # 呼び出し元が内容を通知できるように SimpleNamespace で返す
+            return False, SimpleNamespace(stdout=stdout, stderr=stderr)
+        except Exception as e:
+            logger.exception("Unexpected error during camera capture")
+            return False, None

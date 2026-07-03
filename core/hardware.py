@@ -425,4 +425,3 @@ class HydroSensors:
         
         # 0%〜100%の範囲を絶対に飛び出さないようにクリッピング
         return round(max(0.0, level), 1)
-

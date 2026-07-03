@@ -164,6 +164,12 @@ function websocketConnect()
     Object.assign(master, data);
   });
 
+  // サーバー側からの汎用ログ出力（デバッグ用）を受け取り、デバッグ領域に追記する
+  webSocket.on('server_log', (data) => {
+    const msg = (data && data.message) ? data.message : JSON.stringify(data);
+    printDebugMessage((data && data.datetime ? data.datetime + ': ' : '') + msg);
+  });
+
   webSocket.on('refill_update', (data) => {
     setValueRefillUpdate(data);
     Object.assign(master, data);
@@ -598,7 +604,9 @@ function setValueRefillUpdate(data) {
     refillLog.value = data['refill_records'];
     
     // 常に最新のログ（最下部）が見えるように自動スクロール
-    refillLog.scrollTop = refillLog.scrollHeight;
+    requestAnimationFrame(() => {
+      refillLog.scrollTop = refillLog.scrollHeight;
+    });
   }
 }
 
