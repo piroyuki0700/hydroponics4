@@ -58,6 +58,8 @@ CREATE TABLE `setting_schedule` (
   -- 自動給水設定 (Refill)
   `refill_active` BOOLEAN DEFAULT TRUE,
   `refill_max_seconds` INT DEFAULT 180, -- 給水の最大ON時間（秒）
+
+  `valve_active` BOOLEAN DEFAULT TRUE, -- 給水用バルブのON/OFF制御有効化
   `valve_open` INT DEFAULT 4, -- 給水用バルブの開時刻（時）
   `valve_close` INT DEFAULT 6, -- 給水用バルブの閉時刻（時）
 
@@ -80,9 +82,9 @@ CREATE TABLE `setting_schedule` (
   `emergency_active` BOOLEAN DEFAULT TRUE,
 
   -- 処理切替タイミング
-  'minute_start' INT DEFAULT 0,
-  'minute_stop' INT DEFAULT 54,
-  'minute_refill' INT DEFAULT 56,
+  `minute_start` INT DEFAULT 0,
+  `minute_stop` INT DEFAULT 54,
+  `minute_refill` INT DEFAULT 56,
  
   -- 更新日時
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

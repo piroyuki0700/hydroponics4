@@ -14,10 +14,11 @@ from core.notifier import HydroNotifier
 logger = logging.getLogger(__name__)
 
 class PumpSwitcher:
-    def __init__(self, device, logger, notifier):
+    def __init__(self, device, logger, on_emergency=None):
         self.device = device
         self.logger = logger
-        self.notifier = notifier
+        # on_emergency: callable(message) provided by manager to centralize emergency checks
+        self.on_emergency = on_emergency
         self.running = False
         self.thread = None
         self.event = threading.Event()
@@ -78,8 +79,12 @@ class PumpSwitcher:
                     self.logger.warning(f"Circulation failure detected on {pump_name}! Switching to {backup_name}.")
                     target_pump.off()
                     backup_pump.on()
-                    if bool(int(self.schedule.get('emergency_active', 0))):
-                        self.notifier.send_emergency(f"【警告】{pump_name}の循環不全。{backup_name}に切り替えました。")
+                    # Delegate emergency sending to provided callback (manager will check emergency_active)
+                    if self.on_emergency:
+                        try:
+                            self.on_emergency(f"【警告】{pump_name}の循環不全。{backup_name}に切り替えました。")
+                        except Exception as e:
+                            self.logger.error(f"Failed to call on_emergency callback: {e}")
                     if self.event.wait(max(0, self.ontime - CHECK_DELAY)): break
                 else:
                     if self.ontime > CHECK_DELAY:
@@ -122,7 +127,8 @@ class HydroManager:
         self.socketio = socketio
         self.logger = logging.getLogger(__name__)
         self.notifier = HydroNotifier(config)
-        self.switcher = PumpSwitcher(device, self.logger, self.notifier)
+        # Pass manager's emergency wrapper to the switcher as a callback
+        self.switcher = PumpSwitcher(device, self.logger, on_emergency=self.send_emergency_if_enabled)
         self.switcher.set_cycle_callback(self._pump_cycle_status)
         self.current_mode = "Unknown"
         self.leak_task = None
@@ -150,6 +156,16 @@ class HydroManager:
     def _is_schedule_active(self):
         # スケジュール動作が有効かどうかを返す
         return bool(int(self.schedule.get('schedule_active', 0)))
+
+    def send_emergency_if_enabled(self, message):
+        """Centralized wrapper: only send emergency if schedule.emergency_active is truthy."""
+        try:
+            if bool(int(self.schedule.get('emergency_active', 1))):
+                self.notifier.send_emergency(message)
+            else:
+                self.logger.info("Emergency suppressed by schedule.emergency_active setting.")
+        except Exception as e:
+            self.logger.error(f"Failed to execute send_emergency_if_enabled: {e}")
 
     def _stop_background_controls(self):
         # バックグラウンドで動いているタスクをすべて停止する
@@ -236,20 +252,21 @@ class HydroManager:
             self.switcher.stop()
 
         # --- 🚰 水道バルブの開閉判定 ---
-        v_open = self.schedule.get('valve_open')
-        v_close = self.schedule.get('valve_close')
-        self.logger.info(f"Valve schedule: open at {v_open}h, close at {v_close}h. Evaluating current valve status...") 
-        if v_open is not None and v_close is not None:
-            if int(v_open) <= now.hour < int(v_close):
-                if not self.device.leak_detect.is_active:
-                    self.logger.info("Current time is within water window. Opening water valve.")
-                    self.device.water_valve.on()
+        if bool(int(self.schedule.get('valve_active', 0))):
+            v_open = self.schedule.get('valve_open')
+            v_close = self.schedule.get('valve_close')
+            self.logger.info(f"Valve schedule: open at {v_open}h, close at {v_close}h. Evaluating current valve status...") 
+            if v_open is not None and v_close is not None:
+                if int(v_open) <= now.hour < int(v_close):
+                    if not self.device.leak_detect.is_active:
+                        self.logger.info("Current time is within water window. Opening water valve.")
+                        self.device.water_valve.on()
+                    else:
+                        self.logger.critical("Leak detected at startup within water window! Keeping water valve CLOSED.")
+                        self.device.water_valve.off()
                 else:
-                    self.logger.critical("Leak detected at startup within water window! Keeping water valve CLOSED.")
+                    self.logger.info("Current time is outside water window. Ensuring water valve is CLOSED.")
                     self.device.water_valve.off()
-            else:
-                self.logger.info("Current time is outside water window. Ensuring water valve is CLOSED.")
-                self.device.water_valve.off()
 
         # --- 💨 CPUファンの初期判定 ---
         self._manage_cpu_fan_for_mode(mode)
@@ -500,12 +517,11 @@ class HydroManager:
                     # セーフティとして再度バルブの閉じ命令を重ねて送り、2次的被害を防ぐ
                     self.device.water_valve.off()
                     
-                    # 💥 緊急事態のため、1日1回の制限に関わらず、見つけたその瞬間にDiscordへ即時アラート送信！
-                    if bool(int(self.schedule.get('emergency_active', 0))):
-                        self.notifier.send_emergency(
-                            f"【重大警報】水道バルブ閉鎖期間中に、異常な水流（{diff_pulses}パルス）を検知しました。\n"
-                            f"電磁弁の閉鎖不良、または配管からの二次漏水の可能性があります。至急現場を確認してください。"
-                        )
+                    # 💥 緊急事態のため、即時アラート送信（manager側で有効/無効判定を行う）
+                    self.send_emergency_if_enabled(
+                        f"【重大警報】水道バルブ閉鎖期間中に、異常な水流（{diff_pulses}パルス）を検知しました。\n"
+                        f"電磁弁の閉鎖不良、または配管からの二次漏水の可能性があります。至急現場を確認してください。"
+                    )
 
             # 現在の時間帯に基づいて、これからの1時間のバルブ開閉を設定
             if int(v_open) <= now.hour < int(v_close):
@@ -644,8 +660,7 @@ class HydroManager:
                         self.device.water_valve.off() # バルブ強制閉鎖のみを実行
 
                         # 💥 漏水検知時は、時間を待たずにその瞬間に即座にDiscordへSOSを飛ばします！
-                        if bool(int(self.schedule.get('emergency_active', 0))):
-                            self.notifier.send_emergency("【警告】サブタンクからの漏水を検知しました。給水バルブを緊急閉鎖しました。")
+                        self.send_emergency_if_enabled("【警告】サブタンクからの漏水を検知しました。給水バルブを緊急閉鎖しました。")
                         break # 発報・閉鎖したらこの日のループを終了（翌朝00時に再チェックされて自動で状態リセット）
 
                     # 時間帯を過ぎてバルブが閉じ、漏水もなければループを抜けてお休みする
@@ -1194,10 +1209,6 @@ class HydroManager:
             perform_refill = not self.device.float_main_bottom.is_active
 
         if perform_refill:
-            # 💡 水の補充を始める前に給水バルブを開ける
-            # 閉じるのは定時処理から実施。
-            self.device.water_valve.on()
-
             if self.device.float_sub.is_active: # サブタンクに水があるか
                 self.logger.info("Water level low. Starting subpump refill sequence...")
                 
@@ -1243,8 +1254,7 @@ class HydroManager:
             else:
                 message = "水位低下していますが、サブタンクの水がありません。"
                 self.logger.warning(message)
-                if bool(int(self.schedule.get('emergency_active', 0))):
-                    self.notifier.send_emergency(message)
+                self.send_emergency_if_enabled(message)
                 return self.make_result(False, message)
         else:
             self.logger.info("Water level is sufficient. No refill needed.")
@@ -1388,8 +1398,7 @@ class HydroManager:
                 if not self.device.float_sub.is_active:
                     self.logger.warning("Subpump monitor: Subtank empty. Stopping pump.")
                     self._stop_and_record_refill(trigger, start_time, start_level, "Aborted (Subtank empty)")
-                    if bool(int(self.schedule.get('emergency_active', 0))):
-                        self.notifier.send_emergency("【警告】自動補充中にサブタンクが空になりました。")
+                    self.send_emergency_if_enabled("【警告】自動補充中にサブタンクが空になりました。")
                     break
 
                 self.cmd_subpump_update(None) # 状態更新をフロントへ通知
@@ -1477,7 +1486,8 @@ class HydroManager:
         return self.make_result(True, "report created")
 
     def cmd_test_discord(self, request):
-        self.notifier.send_emergency(f"Discord test from Hydroponics: {datetime.now().strftime('%Y/%m/%d %H:%M:%S')}")
+        # Use centralized wrapper so the test respects emergency_active flag
+        self.send_emergency_if_enabled(f"Discord test from Hydroponics: {datetime.now().strftime('%Y/%m/%d %H:%M:%S')}")
         return self.make_result(True, "discord test sent")
 
     def cmd_test_ssr1(self, request):
@@ -1536,3 +1546,22 @@ class HydroManager:
                 'cpu_temp': f"{cpu_temp:.1f}" if success else cpu_temp
             }
         }
+
+    def cmd_get_past_24h(self, data):
+        """過去24時間分のレポートデータを取得してフロントに送信する"""
+        self.logger.info("Graph data (past 24h) requested via command handler.")
+
+        # 先ほど HydroDB クラスに追加した関数を実行
+        past_reports = self.db.get_past_24h_reports()
+
+        # 💡 コマンドの送信元（ボタンを押した本人）の _client_sid を取得
+        client_sid = data.get('_client_sid')
+
+        if client_sid:
+            # 💡 データを一括で要求した本人だけに個別に送り返す（to=client_sid）
+            self.socketio.emit('response_past_24h', {'past_reports': past_reports}, to=client_sid)
+            return self.make_result(True, "Successfully fetched past 24h reports.")
+        else:
+            # 万が一 sid がない場合はブロードキャスト（予備対策）
+            self.broadcast('response_past_24h', {'past_reports': past_reports})
+            return self.make_result(True, "Fetched past 24h reports (broadcast).")

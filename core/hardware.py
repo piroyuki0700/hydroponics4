@@ -384,7 +384,7 @@ class HydroSensors:
                 
             avg_voltage = sum(voltages) / len(voltages)
             rounded_voltage = round(avg_voltage, 3)
-            logger.info(f"Raw pressure voltage: {rounded_voltage} V")
+            # logger.info(f"Raw pressure voltage: {rounded_voltage} V")
             return rounded_voltage
         except Exception as e:
             logger.error(f"Pressure sensor read error: {e}")

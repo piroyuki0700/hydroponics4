@@ -119,6 +119,9 @@
         <a href="#pane_sensor" class="nav-link" data-bs-toggle="tab">センサー閾値</a>
       </li>
       <li class="nav-item">
+        <a href="#pane_report_check" class="nav-link" data-bs-toggle="tab">レポート確認</a>
+      </li>
+      <li class="nav-item">
         <a href="#pane_version" class="nav-link" data-bs-toggle="tab">バージョン</a>
       </li>
       <li class="nav-item">
@@ -234,6 +237,7 @@
               </td>
               <td colspan="2">
                 バルブ開放
+                <input class="form-check-input" type="checkbox" role="switch" id="valve_active_switch" name="valve_active" value="1">
                 <input class="input_number" name="valve_open" type="text" value=""> 
                 〜<input class="input_number" name="valve_close" type="text" value=""> 時
               </td>
@@ -498,9 +502,25 @@
       </div>
     </div>
 
-<div id="pane_version" class="tab-pane content_full">
+    <div id="pane_report_check" class="tab-pane content_full">
       <div class="content_top bg-dark"></div>
       
+      <div class="content_main d-flex flex-column">
+        <i class="bi bi-file-earmark-text text-secondary m-2">レポート確認</i>
+        <div>
+          <button id="btn_request_past24h" onclick="requestPast24hReports()" class="btn btn-outline-secondary btn-sm py-0 px-2 version-btn">
+            <i class="bi bi-arrow-clockwise me-1"></i>24時間分を取得
+          </button>
+        </div>
+        <div style="position: relative; height:70vh; width:80vw;">
+          <canvas id="reportChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div id="pane_version" class="tab-pane content_full">
+      <div class="content_top bg-dark"></div>
+
       <div class="content_main d-flex flex-column">
         <i class="bi bi-question-circle text-secondary m-2"> バージョン情報</i>
         
@@ -533,8 +553,8 @@
                 <span class="version-label">CPU 温度:</span>
                 <span class="version-value d-flex align-items-center">
                   <span id="cpu_temperature">---</span>
-                  <button id="btn_refresh_cpu" onclick="retryCpuUpdate()" class="btn btn-outline-secondary btn-sm ms-2 d-none py-0 px-2 version-btn">
-                    <i class="bi bi-arrow-clockwise"></i> 再開
+                  <button id="btn_refresh_cpu" onclick="retryCpuUpdate()" class="btn btn-outline-secondary btn-sm ms-2 py-0 px-2 version-btn">
+                    <i class="bi bi-arrow-clockwise"></i> 更新
                   </button>
                 </span>
               </div>
@@ -645,6 +665,9 @@
 
     <!-- Socket.io 4.8.3 -->
     <script src="https://cdn.socket.io/4.8.3/socket.io.min.js" integrity="sha384-kzavj5fiMwLKzzD1f8S7TeoVIEi7uKHvbTA3ueZkrzYq75pNQUiUi6Dy98Q3fxb0" crossorigin="anonymous"></script>
+
+    <!-- Chart.js 4.5.1 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
 
     <!-- PiroLab Hydroponics js (バニラJS書き換え版) -->
     <script src="{{ url_for('static', filename='js/hydroponics4.js') }}"></script>

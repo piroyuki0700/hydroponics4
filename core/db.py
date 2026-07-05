@@ -252,6 +252,44 @@ class HydroDB:
     def insert_refill_record(self, data):
         return self.insert('refill_record', data)
 
+    def get_past_24h_reports(self):
+        """過去24時間分のレポートを古い順(昇順)で全カラム取得する"""
+        with self.lock_db:
+            try:
+                self._check_connection()
+                cur = self.conn.cursor()
+                keys = self.getkeys(cur, 'report')
+
+                # 24時間前の日時を計算
+                time_threshold = datetime.now() - timedelta(hours=24)
+
+                # インデックス(idx_report_time)を利用して高速に範囲検索し、古い順に並び替え
+                sql = "SELECT * FROM `report` WHERE `created_at` >= ? ORDER BY `created_at` ASC"
+                cur.execute(sql, (time_threshold,))
+                rows = cur.fetchall()
+
+                result = []
+                for row in rows:
+                    data = {}
+                    for i in range(0, len(row)):
+                        # 既存のシリアライズ処理を通すことで、Decimalはfloatに、datetimeは文字列に自動変換されます
+                        data[keys[i]] = self._serialize_value(row[i])
+
+                    # 💡 JavaScript側のグラフの横軸(Time)として扱いやすいよう、
+                    # 💡 '13:00' のような時分だけの文字列(display_time)を専用に1つ追加しておきます
+                    if isinstance(row[keys.index('created_at')], datetime):
+                        data['display_time'] = row[keys.index('created_at')].strftime('%H:%M')
+                    else:
+                        data['display_time'] = ''
+
+                    result.append(data)
+
+                cur.close()
+                return result
+            except mariadb.Error as e:
+                logger.error(f"mariadb.Error in get_past_24h_reports: {e}")
+                return []
+
     def __del__(self):
         try:
             self.conn.close()

@@ -194,6 +194,16 @@ function websocketConnect()
     }
   });
 
+  // 過去24時間データ受信イベント
+  webSocket.on('response_past_24h', (data) => {
+    if (data && data.past_reports && Array.isArray(data.past_reports)) {
+      rawReportsCache = data.past_reports; // キャッシュに格納
+      initOrUpdateChart();                 // グラフを描画・更新
+    } else {
+      printDebugMessage("グラフデータの取得に失敗したか、データが空です。");
+    }
+  });
+
   // // 結果ポップアップ通知
   // webSocket.on('result', (data) => {
   //   printDebugMessage(data['datetime'] + ': ' + data['result'] + ' - ' + data['message']);
@@ -439,7 +449,7 @@ function setValueSchedule(data)
   // 新しい「fert_adjust（液肥の自動調整）」を追加しました
   const toggleItems = [
     'schedule_active', 'room_fan_active', 'nightly_active', 'camera_active',
-    'refill_active', 'fert_adjust_active', 'notify_active', 'emergency_active'
+    'refill_active', 'valve_active', 'fert_adjust_active', 'notify_active', 'emergency_active'
   ];
 
   toggleItems.forEach(name => {
@@ -754,7 +764,7 @@ function scheduleCommitClick() {
   // FormDataはチェックの外れているスイッチの値を送信しない性質があるため、ここで"1"または"0"を確定させます
   const toggles = [
     "schedule_active", "room_fan_active", "nightly_active", "camera_active",
-    "refill_active", "fert_adjust_active", "notify_active", "emergency_active"
+    "refill_active", "valve_active", "fert_adjust_active", "notify_active", "emergency_active"
   ];
   
   toggles.forEach(name => {
@@ -1097,11 +1107,7 @@ function startCpuAutoUpdate() {
     clearInterval(timerIdCpuTemp);
   }
 
-  // エラー再開ボタンを隠す
-  const btnRefresh = $('#btn_refresh_cpu');
-  if (btnRefresh) {
-    btnRefresh.classList.add('d-none');
-  }
+  // CPU 再開ボタンは常時表示にする（表示/非表示操作は行わない）
 
   // 表示された瞬間にまず1回最新値をリクエスト
   requestCpuTemperature();
@@ -1128,6 +1134,10 @@ function stopCpuAutoUpdate() {
 function requestCpuTemperature() {
   try {
     websocket_send({'command': 'get_cpu_temperature'});
+    const cpuTempEl = $('#cpu_temperature');
+    if (cpuTempEl) {
+      cpuTempEl.textContent = "-- ℃";
+    }
   } catch (e) {
     handleCpuUpdateError();
   }
@@ -1147,11 +1157,6 @@ function handleCpuUpdateError() {
   printDebugMessage("CPU温度の取得に失敗しました。通信状態を確認してください。");
   // エラー時もタイマーを安全に止める
   stopCpuAutoUpdate();
-
-  const btnRefresh = $('#btn_refresh_cpu');
-  if (btnRefresh) {
-    btnRefresh.classList.remove('d-none');
-  }
 }
 //
 // デバッグ：サーバーへリクエストを送ってLEDをON/OFFするテスト
@@ -1172,6 +1177,125 @@ function debugButtonMeasure(sensor_kind) {
 //
 function subPumpButtonClick(request, trigger="none") {
   websocket_send({'command': 'subpump_' + request, 'trigger': trigger});
+}
+
+// 📊 グラフ制御用グローバル変数
+let reportChartInstance = null;
+let rawReportsCache = []; // 過去24時間分の生データ保持用
+
+// 各項目の設定（表示名、単位、カラー、初期表示状態）
+const TARGET_FIELDS = {
+  air_temp:       { label: '気温', unit: '℃', color: 'rgb(255, 99, 132)', defaultShow: true },    // 赤
+  humidity:       { label: '湿度', unit: '%',  color: 'rgb(54, 162, 235)',  defaultShow: true },    // 青
+  water_temp:     { label: '水温', unit: '℃', color: 'rgb(75, 192, 192)', defaultShow: true },    // 青緑
+  water_pressure: { label: '水圧', unit: 'V',  color: 'rgb(255, 159, 64)',  defaultShow: false },   // 橙（初期OFF）
+  water_level:    { label: '水位', unit: '%',  color: 'rgb(153, 102, 255)', defaultShow: false },   // 紫（初期OFF）
+  tds_level:      { label: 'EC値', unit: 'ms/cm', color: 'rgb(255, 205, 86)', defaultShow: true },  // 黄
+  brightness:     { label: '照度', unit: 'lx', color: 'rgb(201, 203, 207)', defaultShow: false },   // 灰（初期OFF）
+  water_pulses:   { label: '水流パルス', unit: '回', color: 'rgb(34, 139, 34)', defaultShow: false } // 緑（初期OFF）
+};
+
+// サーバーへ過去24時間データを要求する（更新ボタンから呼ばれる）
+function requestPast24hReports() {
+  if (webSocket && webSocket.connected) {
+    printDebugMessage("過去24時間のグラフデータを要求中...");
+    websocket_send({ command: 'get_past_24h' });
+  } else {
+    printDebugMessage("サーバーに接続されていないため、グラフを更新できません。");
+  }
+}
+
+// グラフの描画・更新（クライアント側での正規化処理含む）
+function initOrUpdateChart() {
+  const ctx = $('#reportChart');
+  if (!ctx) return;
+
+  // 各項目の過去24時間における最小・最大値を計算
+  const minMaxMap = {};
+  Object.keys(TARGET_FIELDS).forEach(field => {
+    const values = rawReportsCache.map(r => r[field]).filter(v => v !== null && v !== undefined);
+    if (values.length > 0) {
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      minMaxMap[field] = { min: min, max: max === min ? max + 1 : max };
+    } else {
+      minMaxMap[field] = { min: 0, max: 100 };
+    }
+  });
+
+  // 横軸のラベル（時:分）
+  const labels = rawReportsCache.map(r => r.display_time || '');
+
+  // 各データセットの組み立て
+  const datasets = Object.keys(TARGET_FIELDS).map(field => {
+    const config = TARGET_FIELDS[field];
+    const mm = minMaxMap[field];
+
+    return {
+      label: config.label,
+      borderColor: config.color,
+      backgroundColor: config.color,
+      tension: 0.2, // 線の少し丸みを持たせる設定
+      hidden: !config.defaultShow, // 👈 最初は非表示にしたい場合、Chart.jsでは hidden: true にします
+      data: rawReportsCache.map(r => {
+        const val = r[field];
+        if (val === null || val === undefined) return null;
+
+        // クライアント側での「0〜100%」への正規化計算
+        const normalized = ((val - mm.min) / (mm.max - mm.min)) * 100;
+
+        // 描画データに y軸値 と 生データ(rawValue) を隠し持たせる
+        return { y: normalized, rawValue: val };
+      })
+    };
+  });
+
+  // すでにグラフがある場合は中身のデータだけを入れ替えてリフレッシュ（画面のチラつき防止）
+  if (reportChartInstance) {
+    reportChartInstance.data.labels = labels;
+    reportChartInstance.data.datasets = datasets;
+    reportChartInstance.update();
+    return;
+  }
+
+  // 初回グラフ生成（凡例機能は自動で有効化されます）
+  reportChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: { labels: labels, datasets: datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          min: 0,
+          max: 100,
+          title: { display: true, text: '変化率 (%)' }
+        }
+      },
+      plugins: {
+        // 標準の凡例を表示。デフォルトでクリックでのON/OFFに対応しています
+        legend: {
+          display: true,
+          position: 'top',
+          labels: { boxWidth: 12, padding: 15 }
+        },
+        // マウスホバー（ツールチップ）のカスタム：0〜100%の値を無視して、生データと単位を表示
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const datasetLabel = context.dataset.label;
+              const rawData = context.raw.rawValue;
+              const fieldKey = Object.keys(TARGET_FIELDS).find(k => TARGET_FIELDS[k].label === datasetLabel);
+              const unit = fieldKey ? TARGET_FIELDS[fieldKey].unit : '';
+
+              if (rawData === null || rawData === undefined) return `${datasetLabel}: データなし`;
+              return `${datasetLabel}: ${rawData} ${unit}`;
+            }
+          }
+        }
+      }
+    }
+  });
 }
 
 //
