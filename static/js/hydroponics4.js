@@ -197,11 +197,22 @@ function websocketConnect()
   // 過去24時間データ受信イベント
   webSocket.on('response_past_24h', (data) => {
     if (data && data.past_reports && Array.isArray(data.past_reports)) {
-      rawReportsCache = data.past_reports; // キャッシュに格納
-      initOrUpdateChart();                 // グラフを描画・更新
-    } else {
-      printDebugMessage("グラフデータの取得に失敗したか、データが空です。");
-    }
+        // フロント側で数値型が文字列になっている可能性があるため、正規化してからキャッシュに格納
+        rawReportsCache = data.past_reports.map(r => {
+          const copy = Object.assign({}, r);
+          // 主要な数値フィールドを可能な限り数値に変換（存在チェック済み）
+          ['air_temp','humidity','water_temp','water_pressure','water_level','tds_level','brightness','water_pulses'].forEach(k => {
+            if (k in copy && copy[k] !== null && copy[k] !== undefined) {
+              const n = Number(copy[k]);
+              copy[k] = Number.isNaN(n) ? copy[k] : n;
+            }
+          });
+          return copy;
+        });
+        initOrUpdateChart();                 // グラフを描画・更新
+      } else {
+        printDebugMessage("グラフデータの取得に失敗したか、データが空です。");
+      }
   });
 
   // // 結果ポップアップ通知
@@ -1210,6 +1221,10 @@ function initOrUpdateChart() {
   const ctx = $('#reportChart');
   if (!ctx) return;
 
+  // グローバルフォント設定を大きくする（全グラフ要素に適用）
+  Chart.defaults.font.size = 14;
+  Chart.defaults.font.weight = '500';
+
   // 各項目の過去24時間における最小・最大値を計算
   const minMaxMap = {};
   Object.keys(TARGET_FIELDS).forEach(field => {
@@ -1231,31 +1246,29 @@ function initOrUpdateChart() {
     const config = TARGET_FIELDS[field];
     const mm = minMaxMap[field];
 
+    // 生データと正規化値を別配列で作る（チャートには数値のみ渡す）
+    const rawValues = rawReportsCache.map(r => (r[field] === null || r[field] === undefined) ? null : r[field]);
+    const normalizedValues = rawValues.map(v => {
+      if (v === null || v === undefined) return null;
+      return ((v - mm.min) / (mm.max - mm.min)) * 100;
+    });
+
     return {
       label: config.label,
       borderColor: config.color,
       backgroundColor: config.color,
       tension: 0.2, // 線の少し丸みを持たせる設定
       hidden: !config.defaultShow, // 👈 最初は非表示にしたい場合、Chart.jsでは hidden: true にします
-      data: rawReportsCache.map(r => {
-        const val = r[field];
-        if (val === null || val === undefined) return null;
-
-        // クライアント側での「0〜100%」への正規化計算
-        const normalized = ((val - mm.min) / (mm.max - mm.min)) * 100;
-
-        // 描画データに y軸値 と 生データ(rawValue) を隠し持たせる
-        return { y: normalized, rawValue: val };
-      })
+      data: normalizedValues,
+      // 生データを別プロパティで保持してツールチップなどで参照する
+      rawValues: rawValues
     };
   });
-
-  // すでにグラフがある場合は中身のデータだけを入れ替えてリフレッシュ（画面のチラつき防止）
+  
+  // すでにグラフがある場合は破棄してから再生成（オプション変更を完全に反映させるため）
   if (reportChartInstance) {
-    reportChartInstance.data.labels = labels;
-    reportChartInstance.data.datasets = datasets;
-    reportChartInstance.update();
-    return;
+    reportChartInstance.destroy();
+    reportChartInstance = null;
   }
 
   // 初回グラフ生成（凡例機能は自動で有効化されます）
@@ -1265,33 +1278,44 @@ function initOrUpdateChart() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      layout: {
+        padding: { left: 10, right: 10, top: 10, bottom: 10 }
+      },
       scales: {
-        y: {
-          min: 0,
-          max: 100,
-          title: { display: true, text: '変化率 (%)' }
+        y: { 
+          min: 0, 
+          max: 100, 
+          title: { display: true, text: '変化率 (%)', font: { size: 16, weight: 'bold' } },
+          ticks: { font: { size: 14, weight: '500' } }
+        },
+        x: {
+          ticks: { font: { size: 14, weight: '500' } }
         }
       },
       plugins: {
         // 標準の凡例を表示。デフォルトでクリックでのON/OFFに対応しています
-        legend: {
+        legend: { 
           display: true,
           position: 'top',
-          labels: { boxWidth: 12, padding: 15 }
+          labels: { boxWidth: 14, padding: 15, font: { size: 15, weight: '600' } }
         },
         // マウスホバー（ツールチップ）のカスタム：0〜100%の値を無視して、生データと単位を表示
         tooltip: {
           callbacks: {
             label: function(context) {
               const datasetLabel = context.dataset.label;
-              const rawData = context.raw.rawValue;
+              const datasetIndex = context.datasetIndex;
+              const dataIndex = context.dataIndex;
+              const rawData = (reportChartInstance && reportChartInstance.data && reportChartInstance.data.datasets && reportChartInstance.data.datasets[datasetIndex]) ? reportChartInstance.data.datasets[datasetIndex].rawValues[dataIndex] : null;
               const fieldKey = Object.keys(TARGET_FIELDS).find(k => TARGET_FIELDS[k].label === datasetLabel);
               const unit = fieldKey ? TARGET_FIELDS[fieldKey].unit : '';
 
               if (rawData === null || rawData === undefined) return `${datasetLabel}: データなし`;
               return `${datasetLabel}: ${rawData} ${unit}`;
             }
-          }
+          },
+          titleFont: { size: 15, weight: 'bold' },
+          bodyFont: { size: 14, weight: '500' }
         }
       }
     }
