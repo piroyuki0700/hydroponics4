@@ -1200,9 +1200,9 @@ const TARGET_FIELDS = {
   humidity:       { label: '湿度', unit: '%',  color: 'rgb(54, 162, 235)',  defaultShow: true },    // 青
   water_temp:     { label: '水温', unit: '℃', color: 'rgb(75, 192, 192)', defaultShow: true },    // 青緑
   water_pressure: { label: '水圧', unit: 'V',  color: 'rgb(255, 159, 64)',  defaultShow: false },   // 橙（初期OFF）
-  water_level:    { label: '水位', unit: '%',  color: 'rgb(153, 102, 255)', defaultShow: false },   // 紫（初期OFF）
+  water_level:    { label: '水位', unit: '%',  color: 'rgb(153, 102, 255)', defaultShow: true },   // 紫（初期OFF）
   tds_level:      { label: 'EC値', unit: 'ms/cm', color: 'rgb(255, 205, 86)', defaultShow: true },  // 黄
-  brightness:     { label: '照度', unit: 'lx', color: 'rgb(201, 203, 207)', defaultShow: false },   // 灰（初期OFF）
+  brightness:     { label: '照度', unit: 'lx', color: 'rgb(201, 203, 207)', defaultShow: true },   // 灰（初期OFF）
   water_pulses:   { label: '水流パルス', unit: '回', color: 'rgb(34, 139, 34)', defaultShow: false } // 緑（初期OFF）
 };
 
@@ -1225,13 +1225,24 @@ function initOrUpdateChart() {
   Chart.defaults.font.size = 14;
   Chart.defaults.font.weight = '500';
 
+  // 各項目の最小・最大値の基準範囲、実際の値がこれをはみ出したらグラフのスケールを自動調整する
+  minMaxRef = {};
+  minMaxRef['air_temp'] = { min: 15, max: 30 };
+  minMaxRef['humidity'] = { min: 40, max: 60 };
+  minMaxRef['water_temp'] = { min: 15, max: 30 };
+  minMaxRef['water_pressure'] = { min: 0, max: 1.5 };
+  minMaxRef['water_level'] = { min: 0, max: 100 };
+  minMaxRef['tds_level'] = { min: 1, max: 3 };
+  minMaxRef['brightness'] = { min: 0, max: 4000 };
+  minMaxRef['water_pulses'] = { min: 0, max: 2000 };
+
   // 各項目の過去24時間における最小・最大値を計算
   const minMaxMap = {};
   Object.keys(TARGET_FIELDS).forEach(field => {
     const values = rawReportsCache.map(r => r[field]).filter(v => v !== null && v !== undefined);
     if (values.length > 0) {
-      const min = Math.min(...values);
-      const max = Math.max(...values);
+      const min = Math.min(...values, minMaxRef[field].min);
+      const max = Math.max(...values, minMaxRef[field].max);
       minMaxMap[field] = { min: min, max: max === min ? max + 1 : max };
     } else {
       minMaxMap[field] = { min: 0, max: 100 };
@@ -1257,8 +1268,8 @@ function initOrUpdateChart() {
       label: config.label,
       borderColor: config.color,
       backgroundColor: config.color,
-      tension: 0.2, // 線の少し丸みを持たせる設定
-      hidden: !config.defaultShow, // 👈 最初は非表示にしたい場合、Chart.jsでは hidden: true にします
+      tension: 0,
+      hidden: !config.defaultShow, // 最初は非表示にしたい場合、Chart.jsでは hidden: true にします
       data: normalizedValues,
       // 生データを別プロパティで保持してツールチップなどで参照する
       rawValues: rawValues
@@ -1285,7 +1296,7 @@ function initOrUpdateChart() {
         y: { 
           min: 0, 
           max: 100, 
-          title: { display: true, text: '変化率 (%)', font: { size: 16, weight: 'bold' } },
+          title: { display: true, text: '最小〜最大間の割合(%)', font: { size: 16, weight: 'bold' } },
           ticks: { font: { size: 14, weight: '500' } }
         },
         x: {
