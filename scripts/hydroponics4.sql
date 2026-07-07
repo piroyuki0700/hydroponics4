@@ -78,8 +78,9 @@ CREATE TABLE `setting_schedule` (
   
   -- 通知設定
   `notify_time` INT DEFAULT 12, -- 定時報告の時間（お昼のdiscord投稿など）
-  `notify_active` BOOLEAN DEFAULT TRUE,
-  `emergency_active` BOOLEAN DEFAULT TRUE,
+  `notify_active` BOOLEAN DEFAULT TRUE,  -- 定時報告
+  `normal_active` BOOLEAN DEFAULT TRUE,  -- 通常通知
+  `emergency_active` BOOLEAN DEFAULT TRUE,  -- 緊急通知
 
   -- 処理切替タイミング
   `minute_start` INT DEFAULT 0,

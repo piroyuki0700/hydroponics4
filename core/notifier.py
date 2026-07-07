@@ -10,6 +10,17 @@ class HydroNotifier:
         self.config = config
         self.webhook_url = config.DISCORD_WEBHOOK_URL
 
+    def send_normal(self, message):
+        """通常通知：テキストのみで即座に送信"""
+        if not self.webhook_url: return
+
+        payload = {"content": f"✅ **【通常報告】**\n{message}"}
+        try:
+            requests.post(self.webhook_url, json=payload, timeout=5)
+            logger.info("Normal Discord notification sent.")
+        except Exception as e:
+            logger.error(f"Failed to send normal notification: {e}")
+
     def send_emergency(self, message):
         """緊急通知：テキストのみで即座に送信"""
         if not self.webhook_url: return

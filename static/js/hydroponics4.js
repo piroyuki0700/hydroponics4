@@ -459,8 +459,8 @@ function setValueSchedule(data)
   // 🔄 トグルスイッチ（チェックボックス）のON/OFF制御
   // 新しい「fert_adjust（液肥の自動調整）」を追加しました
   const toggleItems = [
-    'schedule_active', 'room_fan_active', 'nightly_active', 'camera_active',
-    'refill_active', 'valve_active', 'fert_adjust_active', 'notify_active', 'emergency_active'
+    'schedule_active', 'room_fan_active', 'nightly_active', 'camera_active', 'refill_active',
+    'valve_active', 'fert_adjust_active', 'notify_active', 'normal_active', 'emergency_active'
   ];
 
   toggleItems.forEach(name => {
@@ -774,8 +774,8 @@ function scheduleCommitClick() {
   // トグルスイッチ（チェックボックス）の確定処理
   // FormDataはチェックの外れているスイッチの値を送信しない性質があるため、ここで"1"または"0"を確定させます
   const toggles = [
-    "schedule_active", "room_fan_active", "nightly_active", "camera_active",
-    "refill_active", "valve_active", "fert_adjust_active", "notify_active", "emergency_active"
+    "schedule_active", "room_fan_active", "nightly_active", "camera_active", "refill_active",
+    "valve_active", "fert_adjust_active", "notify_active", "normal_active", "emergency_active"
   ];
   
   toggles.forEach(name => {
@@ -1202,9 +1202,9 @@ const TARGET_FIELDS = {
   water_pressure: { label: '水圧', unit: 'V',  color: 'rgb(255, 140, 64)',  defaultShow: false },   // 橙（初期OFF）
   water_level:    { label: '水位', unit: '%',  color: 'rgb(153, 102, 255)', defaultShow: true },   // 紫（初期OFF）
   tds_volt:       { label: 'EC電圧', unit: 'V',  color: 'rgb(255, 140, 160)', defaultShow: false },   // ピンク（初期OFF）
-  tds_level:      { label: 'EC値', unit: 'ms/cm', color: 'rgb(34, 139, 34)', defaultShow: true },  // 緑
+  tds_level:      { label: 'EC値', unit: 'ms/cm', color: 'rgb(255, 205, 86)', defaultShow: true },  // 緑
   brightness:     { label: '照度', unit: 'lx', color: 'rgb(201, 203, 207)', defaultShow: true },   // 灰（初期OFF）
-  water_pulses:   { label: '水流パルス', unit: '回', color: 'rgb(255, 205, 86)', defaultShow: false } // 黄（初期OFF）
+  water_pulses:   { label: '水流パルス', unit: '回', color: 'rgb(60, 139, 34)', defaultShow: false } // 黄（初期OFF）
 };
 
 // サーバーへ過去24時間データを要求する（更新ボタンから呼ばれる）

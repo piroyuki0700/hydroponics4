@@ -157,6 +157,16 @@ class HydroManager:
         # スケジュール動作が有効かどうかを返す
         return bool(int(self.schedule.get('schedule_active', 0)))
 
+    def send_normal_if_enabled(self, message):
+        """Centralized wrapper: only send normal report if schedule.normal_active is truthy."""
+        try:
+            if bool(int(self.schedule.get('normal_active', 1))):
+                self.notifier.send_normal(message)
+            else:
+                self.logger.info("Normal suppressed by schedule.normal_active setting.")
+        except Exception as e:
+            self.logger.error(f"Failed to execute send_normal_if_enabled: {e}")
+
     def send_emergency_if_enabled(self, message):
         """Centralized wrapper: only send emergency if schedule.emergency_active is truthy."""
         try:
@@ -1426,7 +1436,8 @@ class HydroManager:
         elapsed_seconds = int(end_time - start_time)
         end_level = self.sensors.read_water_level()
         self.logger.info(f"Refill ended. Duration: {elapsed_seconds}s. Level : {start_level} -> {end_level}%. Status: {result_status}")
-        
+        self.send_normal_if_enabled(f"自動補充終了: {elapsed_seconds}秒経過。水位: {start_level}% -> {end_level}%。結果: {result_status}")
+
         # DBに補充の歴史（ログ）を保存
         try:
             self.db.insert_refill_record({
