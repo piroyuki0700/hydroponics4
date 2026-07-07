@@ -1171,9 +1171,9 @@ class HydroManager:
         elif kind == 'tds_level':
             # 濃度測定には水温補正が必要なため、まず水温を取得
             water_temp = self.sensors.read_water_temp()
-            value = self.sensors.read_tds(water_temp)
-            if value is not None:
-                return self.make_result(True, f"tds_level = {value}")
+            tds_volt, tds_level = self.sensors.read_tds_with_voltage(water_temp)
+            if tds_level is not None:
+                return self.make_result(True, f"tds_level = {tds_level} uS/cm (voltage={tds_volt} V, water_temp={water_temp} C)")
 
         # 4. 明るさ (brightness / 実際の関数名は read_lux)
         elif kind == 'brightness':
