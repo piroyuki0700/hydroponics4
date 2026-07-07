@@ -159,6 +159,7 @@ CREATE TABLE `report` (
   `water_level`    DECIMAL(4,1) DEFAULT NULL COMMENT '水位%',
     
   -- 肥料濃度（EC値：0.00〜9.99）
+  `tds_volt` DECIMAL(4,2) DEFAULT NULL COMMENT 'EC値の生データ(電圧等)',
   `tds_level` DECIMAL(4,2) DEFAULT NULL COMMENT 'EC値',
   
   -- 照度

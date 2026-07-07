@@ -339,31 +339,33 @@ class HydroSensors:
             logger.error(f"DS18B20 read error: {e}")
             return None
 
-    def read_tds(self, water_temp):
+    def read_tds_with_voltage(self, water_temp=25.0):
         """💥 ラズパイ故障時はNone、Ubuntu開発時はデバッグ用ダミー値を返す"""
         if not IS_HARDWARE_OK:
-            return round(random.uniform(1.2, 2.4), 2)
-            
-        if not self.ads: 
-            return None
-        
-        k_value = self.config.TDS_K_VALUE 
+            return round(random.uniform(1.2, 2.4), 2), round(random.uniform(0.5, 2.0), 2)
+
         try:
-            # 💡 物理水温センサーが壊れて水温が None になった場合の完全安全ガード
-            actual_temp = water_temp if water_temp is not None else 25.0
-            
+            if not self.ads:
+                raise ValueError("ADS1115 not initialized.")
+
             chan = AnalogIn(self.ads, self.config.CH_TDS_METER)
-            v = chan.voltage
-            
-            temp_compensation = 1.0 + 0.02 * (actual_temp - 25.0)
-            v_compensated = v / temp_compensation
-            
-            ec_raw = (133.42 * v_compensated**3 - 255.86 * v_compensated**2 + 857.39 * v_compensated)
-            ec_value = (ec_raw / 1000.0) * k_value
-            return round(max(0, ec_value), 2)
+            v_raw = chan.voltage
+            logger.debug(f"Raw TDS voltage: {v_raw:.3f} V, Water Temp: {water_temp:.1f} °C")
+
         except Exception as e:
             logger.error(f"EC sensor read error: {e}")
-            return None
+            return None, None
+
+        temp_compensated = 1.0 + 0.02 * (water_temp - 25.0)
+        v_compensated = v_raw / temp_compensated
+
+        ec_raw = (133.42 * v_compensated**3 - 255.86 * v_compensated**2 + 857.39 * v_compensated)
+        ec_value = (ec_raw / 1000.0) * self.config.TDS_K_VALUE
+        return round(v_raw, 3), round(max(0, ec_value), 2)
+
+    def read_tds(self, water_temp):
+        tds_volt, tds_level = self.read_tds_with_voltage(water_temp)
+        return tds_level
 
     def read_pressure_voltage(self):
         """水圧センサーの電圧測定（💡5回連続測定によるチャタリングノイズフィルタ搭載）"""

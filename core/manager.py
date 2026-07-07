@@ -604,7 +604,7 @@ class HydroManager:
             try:
                 # 1. 最新のセンサー情報を取得
                 water_temp = self.sensors.read_water_temp()
-                current_tds = self.sensors.read_tds(water_temp) # 実際のTDS(EC)測定値を取得
+                tds_level = self.sensors.read_tds(water_temp) # 実際のTDS(EC)測定値を取得
                 water_level = self.sensors.read_water_level()
 
                 # 2. DBから濃度（TDS）の閾値を取得（参考コードの構成を踏襲）
@@ -612,11 +612,11 @@ class HydroManager:
                 # 万が一設定が空だった場合のデフォルト値として 0.5 (EC) などを指定
                 tds_level_vlow = float(limit.get('tds_level_vlow', 0.5))
 
-                self.logger.info(f"Scheduled Check: Current TDS={current_tds}, Target VLow Threshold={tds_level_vlow}, Water Level={water_level}%")
+                self.logger.info(f"Scheduled Check: Current TDS={tds_level}, Target VLow Threshold={tds_level_vlow}, Water Level={water_level}%")
 
                 # 🚨 条件判定: 現在のTDSが「とても低い」の数値を下回り、かつ水位が50%以上か？
-                if current_tds <= tds_level_vlow and water_level >= 50:
-                    self.logger.warning(f"Mid-day boost conditions met! (TDS {current_tds} <= {tds_level_vlow}). Triggering 50% duration fertilization.")
+                if tds_level <= tds_level_vlow and water_level >= 50:
+                    self.logger.warning(f"Mid-day boost conditions met! (TDS {tds_level} <= {tds_level_vlow}). Triggering 50% duration fertilization.")
 
                     # 通常設定の半分の秒数を計算（最低1秒保証）
                     f1_sec = max(1, int(self.schedule.get('fert1_seconds', 10)) // 2)
@@ -917,10 +917,8 @@ class HydroManager:
     def report_main(self):
         report = {}
         report.update(self.sensors.read_bme280())
-        water_temp = self.sensors.read_water_temp()
-        if water_temp is not None:
-            report['water_temp'] = water_temp
-        report['tds_level'] = self.sensors.read_tds(report.get('water_temp'))
+        report['water_temp'] = self.sensors.read_water_temp()
+        report['tds_volt'], report['tds_level'] = self.sensors.read_tds_with_voltage(report.get('water_temp'))
         report['brightness'] = self.sensors.read_lux()
         report['water_pressure'] = self.sensors.read_pressure_voltage()
         report['water_level'] = self.sensors.read_water_level()
@@ -1235,19 +1233,19 @@ class HydroManager:
                     # B) 現在のEC濃度をその場で測定して判定
                     self.logger.info("Fertilizer: Checking current EC level before refill...")
                     water_temp = self.sensors.read_water_temp()
-                    current_tds = self.sensors.read_tds(water_temp)
+                    tds_level = self.sensors.read_tds(water_temp)
                     
                     # 閾値評価ロジック(evaluate)を部分再現して very_high をチェック
                     limit = self.db.get_sensor_limit() or {}
                     vhigh_limit = limit.get('tds_level_vhigh')
                     
-                    if current_tds is not None and vhigh_limit is not None and current_tds > float(vhigh_limit):
+                    if tds_level is not None and vhigh_limit is not None and tds_level > float(vhigh_limit):
                         # 濃度が危険値（very_high）を超えている場合は水のみ補充
-                        self.logger.warning(f"Fertilizer: EC is VERY HIGH ({current_tds}). Skipping fertilizer for safety.")
+                        self.logger.warning(f"Fertilizer: EC is VERY HIGH ({tds_level}). Skipping fertilizer for safety.")
                         request['is_auto_fertilize'] = False
                     else:
                         # 濃度が安全圏、かつ今日初めての自動補充なら「追肥フラグ」をONに！
-                        self.logger.info(f"Fertilizer: EC is safe ({current_tds}). Fertilizer will be added.")
+                        self.logger.info(f"Fertilizer: EC is safe ({tds_level}). Fertilizer will be added.")
                         request['is_auto_fertilize'] = True
 
                 return self.cmd_subpump_start(request)

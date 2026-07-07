@@ -1196,14 +1196,15 @@ let rawReportsCache = []; // 過去24時間分の生データ保持用
 
 // 各項目の設定（表示名、単位、カラー、初期表示状態）
 const TARGET_FIELDS = {
-  air_temp:       { label: '気温', unit: '℃', color: 'rgb(255, 99, 132)', defaultShow: true },    // 赤
-  humidity:       { label: '湿度', unit: '%',  color: 'rgb(54, 162, 235)',  defaultShow: true },    // 青
+  air_temp:       { label: '気温', unit: '℃', color: 'rgb(255, 90, 110)', defaultShow: true },    // 赤
+  humidity:       { label: '湿度', unit: '%',  color: 'rgb(54, 142, 235)',  defaultShow: true },    // 青
   water_temp:     { label: '水温', unit: '℃', color: 'rgb(75, 192, 192)', defaultShow: true },    // 青緑
-  water_pressure: { label: '水圧', unit: 'V',  color: 'rgb(255, 159, 64)',  defaultShow: false },   // 橙（初期OFF）
+  water_pressure: { label: '水圧', unit: 'V',  color: 'rgb(255, 140, 64)',  defaultShow: false },   // 橙（初期OFF）
   water_level:    { label: '水位', unit: '%',  color: 'rgb(153, 102, 255)', defaultShow: true },   // 紫（初期OFF）
-  tds_level:      { label: 'EC値', unit: 'ms/cm', color: 'rgb(255, 205, 86)', defaultShow: true },  // 黄
+  tds_volt:       { label: 'EC電圧', unit: 'V',  color: 'rgb(255, 140, 160)', defaultShow: false },   // ピンク（初期OFF）
+  tds_level:      { label: 'EC値', unit: 'ms/cm', color: 'rgb(34, 139, 34)', defaultShow: true },  // 緑
   brightness:     { label: '照度', unit: 'lx', color: 'rgb(201, 203, 207)', defaultShow: true },   // 灰（初期OFF）
-  water_pulses:   { label: '水流パルス', unit: '回', color: 'rgb(34, 139, 34)', defaultShow: false } // 緑（初期OFF）
+  water_pulses:   { label: '水流パルス', unit: '回', color: 'rgb(255, 205, 86)', defaultShow: false } // 黄（初期OFF）
 };
 
 // サーバーへ過去24時間データを要求する（更新ボタンから呼ばれる）
@@ -1230,8 +1231,9 @@ function initOrUpdateChart() {
   minMaxRef['air_temp'] = { min: 15, max: 30 };
   minMaxRef['humidity'] = { min: 40, max: 60 };
   minMaxRef['water_temp'] = { min: 15, max: 30 };
-  minMaxRef['water_pressure'] = { min: 0, max: 1.5 };
+  minMaxRef['water_pressure'] = { min: 0, max: 1.3 };
   minMaxRef['water_level'] = { min: 0, max: 100 };
+  minMaxRef['tds_volt'] = { min: 1, max: 3 };
   minMaxRef['tds_level'] = { min: 1, max: 3 };
   minMaxRef['brightness'] = { min: 0, max: 4000 };
   minMaxRef['water_pulses'] = { min: 0, max: 2000 };
