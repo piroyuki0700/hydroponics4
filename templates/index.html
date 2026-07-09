@@ -95,13 +95,13 @@
 <div class="content_frame" id="setting" >
   <!-- 左パネル -->
   <div class="content_left">
-<div class="content_top bg-dark d-flex align-items-center">
-  <!-- ⚠️ btn-lg を追加して大きなボタンにし、横方向の余白（px-3）を確保。文字サイズも fs-4 で大きくします -->
-  <button class="btn btn-lg btn-light fs-5 ms-3 px-2 py-1 d-inline-flex align-items-center" onclick="goMain()">
-    <!-- ⚠️ アイコン自体も fs-3 に拡大 -->
-    <i class="bi bi-arrow-return-left fs-3 me-2"></i>戻る
-  </button>
-</div>
+    <div class="content_top bg-dark d-flex align-items-center">
+      <!-- ⚠️ btn-lg を追加して大きなボタンにし、横方向の余白（px-3）を確保。文字サイズも fs-4 で大きくします -->
+      <button class="btn btn-lg btn-light fs-5 ms-3 px-2 py-1 d-inline-flex align-items-center" onclick="goMain()">
+        <!-- ⚠️ アイコン自体も fs-3 に拡大 -->
+        <i class="bi bi-arrow-return-left fs-3 me-2"></i>戻る
+      </button>
+    </div>
     <ul class="nav nav-tabs nav-pills flex-sm-column small">
       <li class="nav-item">
         <a href="#pane_basic_info" class="nav-link active" data-bs-toggle="tab">基本情報</a>
@@ -512,19 +512,49 @@
 
     <div id="pane_report_check" class="tab-pane content_full">
       <div class="content_top bg-dark"></div>
-      
+
       <div class="content_main d-flex flex-column">
         <i class="bi bi-file-earmark-text text-secondary m-2">レポート確認</i>
-        <div>
-          <button id="btn_request_past24h" onclick="requestPast24hReports()" class="btn btn-outline-secondary btn-sm py-0 px-2 version-btn">
-            <i class="bi bi-arrow-clockwise me-1"></i>24時間分を取得
+
+        <!-- コントロールUI（ボタンの右側に統計情報を1行で配置） -->
+        <div class="d-flex align-items-center flex-wrap gap-2 m-2 w-100">
+          <button id="btn_report_prev" onclick="moveDate(-1)" class="btn btn-outline-secondary btn-sm py-1 px-3">
+            <i class="bi bi-chevron-left"></i>◀ 前日
           </button>
-        </div>
-          <div style="position: relative; height:550px; width:1000px;">
-            <canvas id="reportChart"></canvas>
+
+          <span id="txt_report_date" class="fw-bold px-3 fs-5" style="min-width: 130px; text-align: center;">-----</span>
+
+          <button id="btn_report_next" onclick="moveDate(1)" class="btn btn-outline-secondary btn-sm py-1 px-3">
+            翌日 ▶<i class="bi bi-chevron-right"></i>
+          </button>
+
+          <button id="btn_report_today" onclick="requestTodayReports()" class="btn btn-success btn-sm py-1 px-3 ms-2">
+            今日
+          </button>
+
+          <!-- 💡 修正：ボタンの右側に横書き1行で収まるコンパクトな統計枠（薄い枠線あり） -->
+          <div class="d-inline-flex align-items-center px-3 py-1 ms-3 border bg-light rounded shadow-sm" style="gap: 15px; height: 31px;">
+            <span class="fw-bold text-dark" style="font-size: 0.85rem;"><i class="bi bi-thermometer-half me-1"></i>24h統計:</span>
+            <div class="d-flex align-items-center" style="gap: 5px;">
+              <span class="text-danger fw-bold" style="font-size: 0.85rem;">最高</span>
+              <span class="fw-bold text-dark" id="stat_max_temp" style="font-size: 1.0rem;">--.- ℃</span>
+            </div>
+            <div class="d-flex align-items-center" style="gap: 5px;">
+              <span class="text-primary fw-bold" style="font-size: 0.85rem;">最低</span>
+              <span class="fw-bold text-dark" id="stat_min_temp" style="font-size: 1.0rem;">--.- ℃</span>
+            </div>
           </div>
+        </div>
+
+        <!-- 💡 グラフ描画エリア：横幅を100%（最大）に広げました -->
+        <div style="position: relative; height:550px; width:100%; max-width: 1000px; margin-top: 10px;">
+          <canvas id="reportChart"></canvas>
+        </div>
+
       </div>
     </div>
+
+
 
     <div id="pane_version" class="tab-pane content_full">
       <div class="content_top bg-dark"></div>
@@ -610,15 +640,15 @@
         </div>
         <div class="mt-0">
           <span class="border_debug">
+            <span class="small ms-3">Water Valve:</span>
+            <button onclick="debugButtonExec('test_water_valve', 'on')" class="btn btn-secondary command_button">On</button>
+            <button onclick="debugButtonExec('test_water_valve', 'off')" class="btn btn-secondary command_button">Off</button>
             <span class="small">SSR1(sub pump):</span>
             <button onclick="debugButtonExec('test_ssr1', 'on')" class="btn btn-secondary command_button">On</button>
             <button onclick="debugButtonExec('test_ssr1', 'off')" class="btn btn-secondary command_button">Off</button>
             <span class="small ms-3">SSR1(room fan):</span>
             <button onclick="debugButtonExec('test_ssr2', 'on')" class="btn btn-secondary command_button">On</button>
             <button onclick="debugButtonExec('test_ssr2', 'off')" class="btn btn-secondary command_button">Off</button> 
-            <span class="small ms-3">Water Valve:</span>
-            <button onclick="debugButtonExec('test_water_valve', 'on')" class="btn btn-secondary command_button">On</button>
-            <button onclick="debugButtonExec('test_water_valve', 'off')" class="btn btn-secondary command_button">Off</button>
           </span>
         </div>
         <div class="mt-0">

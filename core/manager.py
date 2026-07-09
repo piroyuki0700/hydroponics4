@@ -1574,3 +1574,38 @@ class HydroManager:
             # 万が一 sid がない場合はブロードキャスト（予備対策）
             self.broadcast('response_past_24h', {'past_reports': past_reports})
             return self.make_result(True, "Fetched past 24h reports (broadcast).")
+
+    def cmd_get_report_by_date(self, data):
+        """指定された日付のレポートデータを取得してフロントに送信する"""
+        target_date = data.get('date')
+        if not target_date:
+            target_date = datetime.now().strftime('%Y-%m-%d')
+
+        self.logger.info(f"Graph data requested for date: {target_date}")
+
+        # DBから指定日のデータを取得
+        past_reports = self.db.get_report_by_date(target_date)
+
+        # 💡 各毎時レポートに判定ステータス（total_status等）を合成する
+        evaluated_reports = []
+        for report in past_reports:
+            # 既存の判定ロジックを実行
+            status_info = self.evaluate(report)
+
+            # 元のデータにステータス辞書をドッキング（update）
+            report.update(status_info)
+            evaluated_reports.append(report)
+
+        client_sid = data.get('_client_sid')
+        response_payload = {
+            'target_date': target_date,
+            'past_reports': evaluated_reports  # 💡 判定情報付きのデータを返す
+        }
+
+        if client_sid:
+            self.socketio.emit('response_past_24h', response_payload, to=client_sid)
+            return self.make_result(True, f"Successfully fetched reports for {target_date}.")
+        else:
+            self.broadcast('response_past_24h', response_payload)
+            return self.make_result(True, f"Fetched reports for {target_date} (broadcast).")
+

@@ -290,6 +290,41 @@ class HydroDB:
                 logger.error(f"mariadb.Error in get_past_24h_reports: {e}")
                 return []
 
+    def get_report_by_date(self, date_str):
+        """指定された日付(YYYY-MM-DD)のレポートを古い順(昇順)で全カラム取得する"""
+        with self.lock_db:
+            try:
+                self._check_connection()
+                cur = self.conn.cursor()
+                keys = self.getkeys(cur, 'report')
+
+                # 💡 指定日の 00:00:00 〜 23:59:59 の範囲を算出
+                start_time = f"{date_str} 00:00:00"
+                end_time = f"{date_str} 23:59:59"
+
+                sql = "SELECT * FROM `report` WHERE `created_at` BETWEEN ? AND ? ORDER BY `created_at` ASC"
+                cur.execute(sql, (start_time, end_time))
+                rows = cur.fetchall()
+
+                result = []
+                for row in rows:
+                    data = {}
+                    for i in range(0, len(row)):
+                        data[keys[i]] = self._serialize_value(row[i])
+
+                    if isinstance(row[keys.index('created_at')], datetime):
+                        data['display_time'] = row[keys.index('created_at')].strftime('%H:%M')
+                    else:
+                        data['display_time'] = ''
+
+                    result.append(data)
+
+                cur.close()
+                return result
+            except mariadb.Error as e:
+                logger.error(f"mariadb.Error in get_report_by_date: {e}")
+                return []
+
     def __del__(self):
         try:
             self.conn.close()

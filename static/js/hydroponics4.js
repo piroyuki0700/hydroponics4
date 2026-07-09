@@ -34,9 +34,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 時計の表示
   setTimeout(UpdateClock, 500);
-  // バージョン表示の初期化
-  initVersionPane();
-  
+
+  // タブイベントハンドラーの初期化
+  initTabEventHandlers();
+
   // websocket-serverと接続
   websocketConnect();
 });
@@ -194,25 +195,53 @@ function websocketConnect()
     }
   });
 
-  // 過去24時間データ受信イベント
+  // 過去24時間データ受信イベント（カレンダー移動・統計パネル・アラート背景連動版）
   webSocket.on('response_past_24h', (data) => {
+    console.log("【デバッグ】サーバーからの受信データ:", data);
+
     if (data && data.past_reports && Array.isArray(data.past_reports)) {
-        // フロント側で数値型が文字列になっている可能性があるため、正規化してからキャッシュに格納
-        rawReportsCache = data.past_reports.map(r => {
-          const copy = Object.assign({}, r);
-          // 主要な数値フィールドを可能な限り数値に変換（存在チェック済み）
-          ['air_temp','humidity','water_temp','water_pressure','water_level','tds_level','brightness','water_pulses'].forEach(k => {
-            if (k in copy && copy[k] !== null && copy[k] !== undefined) {
-              const n = Number(copy[k]);
-              copy[k] = Number.isNaN(n) ? copy[k] : n;
-            }
-          });
-          return copy;
+
+      const resDate = data.target_date || "";
+      currentDisplayDate = resDate;
+
+      // 画面上の日付テキスト表示領域を更新
+      const dateEl = $('#txt_report_date');
+      if (dateEl) dateEl.textContent = resDate;
+
+      // 受信したデータを安全に数値化キャスト
+      const formattedReports = data.past_reports.map(r => {
+        const copy = Object.assign({}, r);
+        [
+          'air_temp', 'humidity', 'water_temp', 'water_pressure',
+          'water_level', 'tds_volt', 'tds_level', 'brightness', 'water_pulses'
+        ].forEach(k => {
+          if (k in copy && copy[k] !== null && copy[k] !== undefined) {
+            const n = Number(copy[k]);
+            copy[k] = Number.isNaN(n) ? copy[k] : n;
+          }
         });
-        initOrUpdateChart();                 // グラフを描画・更新
-      } else {
-        printDebugMessage("グラフデータの取得に失敗したか、データが空です。");
+        return copy;
+      });
+
+      // 💥 3. 取得したデータをカレンダーキャッシュに記憶
+      reportDateCacheMap[resDate] = formattedReports;
+
+      // 💥 4. キャッシュが容量オーバー（5日分超）したら古い日付のキーを削除してメモリを節約
+      const cacheKeys = Object.keys(reportDateCacheMap);
+      if (cacheKeys.length > MAX_CACHE_DAYS) {
+        const oldestKey = cacheKeys[0]; // 最初に入った古いキー
+        delete reportDateCacheMap[oldestKey];
+        printDebugMessage(`[Cache Clean] メモリ節約のため、古いキャッシュ(${oldestKey})を削除しました。`);
       }
+
+      // グローバル配列に格納して描画へ
+      rawReportsCache = formattedReports;
+      initOrUpdateChart();
+
+    } else {
+      printDebugMessage("グラフデータの取得に失敗したか、データが空です。");
+    }
+    updateDateButtonsState();
   });
 
   // // 結果ポップアップ通知
@@ -1081,34 +1110,42 @@ function showModalResult(data)
 }
 
 /**
- * 画面起動時、またはWebSocket接続完了時に一度だけ呼び出す初期化関数
+ * すべてのタブの表示・非表示イベントを一括して管理する汎用ハンドラー
  */
-function initVersionPane() {
-  // 💡 確実にイベントを拾うため、document全体でタブ切り替えイベントを監視します
-
+function initTabEventHandlers() {
   // 1. タブが表示された瞬間のイベント
   document.addEventListener('shown.bs.tab', (event) => {
-    // event.target はクリックされた <a> タグを指します
     const activatedTab = event.target;
+    if (!activatedTab) return;
 
-    // <a>タグの href 属性が「#pane_version」だったら、バージョンタブが開かれたと判断
-    if (activatedTab && activatedTab.getAttribute('href') === '#pane_version') {
-      // 1分ごとの自動更新タイマーを開始
+    const href = activatedTab.getAttribute('href');
+
+    // ① バージョンタブが開かれた場合
+    if (href === '#pane_version') {
       startCpuAutoUpdate();
+    }
+    // ② 💥 レポート確認タブが開かれた場合
+    else if (href === '#pane_report_check') {
+      // グラフがまだ生成されていない、またはキャッシュが空なら自動で「今日」のデータを要求
+      if (!reportChartInstance || rawReportsCache.length === 0) {
+        requestTodayReports();
+      }
     }
   });
 
   // 2. 他のタブに切り替わって隠れた瞬間のイベント
   document.addEventListener('hidden.bs.tab', (event) => {
     const deactivatedTab = event.target;
+    if (!deactivatedTab) return;
 
-    // 隠れたタブが「#pane_version」だったら、タイマーを即座に停止！
-    if (deactivatedTab && deactivatedTab.getAttribute('href') === '#pane_version') {
+    const href = deactivatedTab.getAttribute('href');
+
+    // ① バージョンタブから離脱した場合
+    if (href === '#pane_version') {
       stopCpuAutoUpdate();
     }
   });
 }
-
 /**
  * CPU温度の自動定期更新を開始する
  */
@@ -1190,9 +1227,14 @@ function subPumpButtonClick(request, trigger="none") {
   websocket_send({'command': 'subpump_' + request, 'trigger': trigger});
 }
 
-// 📊 グラフ制御用グローバル変数
+// 📊 グラフ・キャッシュ制御用グローバル変数
 let reportChartInstance = null;
-let rawReportsCache = []; // 過去24時間分の生データ保持用
+let rawReportsCache = [];     // 選択された1日分の生データ
+let currentDisplayDate = "";  // 現在表示中の日付 (YYYY-MM-DD)
+
+// 💡 拡張：カレンダーキャッシュオブジェクト（最大7日分）
+let reportDateCacheMap = {};
+const MAX_CACHE_DAYS = 7; // これを超えたら古いキャッシュから自動削除
 
 // 各項目の設定（表示名、単位、カラー、初期表示状態）
 const TARGET_FIELDS = {
@@ -1207,38 +1249,138 @@ const TARGET_FIELDS = {
   water_pulses:   { label: '水流パルス', unit: '回', color: 'rgb(60, 139, 34)', defaultShow: false } // 黄（初期OFF）
 };
 
-// サーバーへ過去24時間データを要求する（更新ボタンから呼ばれる）
-function requestPast24hReports() {
+/**
+ * 💡 修正：今日を割り出すためのヘルパー関数
+ */
+function getTodayString() {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * 今日のレポートを要求する
+ */
+function requestTodayReports() {
+  currentDisplayDate = getTodayString(); // バグのない正確な今日の日付文字列を格納
+  refreshCurrentDateReports();
+  updateDateButtonsState();
+}
+
+/**
+ * 💡 修正：サーバーへデータを要求する関数（今日だけキャッシュをスルーする仕様）
+ */
+function refreshCurrentDateReports() {
+  if (!currentDisplayDate) return;
+
+  const todayStr = getTodayString();
+
+  // もしすでにキャッシュにデータが存在すれば、サーバーへ通信せず即座に描画
+  if (currentDisplayDate !== todayStr && reportDateCacheMap[currentDisplayDate]) {
+    printDebugMessage(`[Cache Hit] 過去データのため、${currentDisplayDate} をキャッシュから展開します。`);
+
+    // 💥 修正：キャッシュ展開時にも、画面上の日付テキスト表示領域を確実に更新する
+    const dateEl = $('#txt_report_date');
+    if (dateEl) {
+      dateEl.textContent = currentDisplayDate;
+    }
+
+    rawReportsCache = reportDateCacheMap[currentDisplayDate];
+    initOrUpdateChart();
+    return;
+  }
+
+  // 💥 今日であるか、キャッシュがない場合は必ずサーバーへ最新データを要求
   if (webSocket && webSocket.connected) {
-    printDebugMessage("過去24時間のグラフデータを要求中...");
-    websocket_send({ command: 'get_past_24h' });
+    const logPrefix = (currentDisplayDate === todayStr) ? "[Network - Today最新]" : "[Network]";
+    printDebugMessage(`${logPrefix} ${currentDisplayDate} のグラフデータをサーバーに要求中...`);
+
+    websocket_send({
+      command: 'get_report_by_date',
+      date: currentDisplayDate
+    });
   } else {
-    printDebugMessage("サーバーに接続されていないため、グラフを更新できません。");
+    printDebugMessage("サーバーに接続されていません。");
   }
 }
 
-// グラフの描画・更新（クライアント側での正規化処理含む）
+/**
+ * 日付を1日前後させる（今日より未来へは進ませない仕様）
+ */
+function moveDate(days) {
+  if (!currentDisplayDate) return;
+
+  // 1. 文字列からDateオブジェクトを作成して日付を加算・減算
+  const d = new Date(currentDisplayDate);
+  d.setDate(d.getDate() + days);
+
+  // 2. 加算後の日付を YYYY-MM-DD 文字列に変換
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const nextDateStr = `${year}-${month}-${day}`;
+
+  // 3. 💥 未来ブロック判定：もし計算結果が「今日の日付」より未来だったら処理を拒否
+  const todayStr = getTodayString();
+  if (nextDateStr > todayStr) {
+    printDebugMessage("明日以降のレポートデータは存在しないため移動できません。");
+    return;
+  }
+
+  // 4. 未来でなければ日付を更新して読み込み
+  currentDisplayDate = nextDateStr;
+  refreshCurrentDateReports();
+
+  // 5. ボタンの見た目の制御を呼び出す
+  updateDateButtonsState();
+}
+
+/**
+ * 現在の日付に応じて「翌日 ▶」ボタンの有効・無効を自動で切り替える補助関数
+ */
+function updateDateButtonsState() {
+  const nextBtn = $('#btn_report_next');
+  if (!nextBtn) return;
+
+  const todayStr = getTodayString();
+
+  if (currentDisplayDate === todayStr) {
+    // 💥 現在表示しているのが「今日」なら、翌日ボタンを半透明にしてクリック不能にする
+    nextBtn.disabled = true;
+    nextBtn.style.opacity = '0.4';
+    nextBtn.style.cursor = 'not-allowed';
+  } else {
+    // 過去データを見ている時は、通常通りクリック可能にする
+    nextBtn.disabled = false;
+    nextBtn.style.opacity = '1.0';
+    nextBtn.style.cursor = 'pointer';
+  }
+}
+
+/**
+ * グラフ描画コア関数（0:00〜23:00固定枠 ＆ アラート背景バグ修正 ＆ 1行統計連動版）
+ */
 function initOrUpdateChart() {
   const ctx = $('#reportChart');
   if (!ctx) return;
 
-  // グローバルフォント設定を大きくする（全グラフ要素に適用）
   Chart.defaults.font.size = 14;
   Chart.defaults.font.weight = '500';
 
-  // 各項目の最小・最大値の基準範囲、実際の値がこれをはみ出したらグラフのスケールを自動調整する
-  minMaxRef = {};
-  minMaxRef['air_temp'] = { min: 15, max: 30 };
-  minMaxRef['humidity'] = { min: 40, max: 60 };
-  minMaxRef['water_temp'] = { min: 15, max: 30 };
-  minMaxRef['water_pressure'] = { min: 0, max: 1.3 };
-  minMaxRef['water_level'] = { min: 0, max: 100 };
-  minMaxRef['tds_volt'] = { min: 1, max: 3 };
-  minMaxRef['tds_level'] = { min: 1, max: 3 };
-  minMaxRef['brightness'] = { min: 0, max: 4000 };
-  minMaxRef['water_pulses'] = { min: 0, max: 2000 };
+  const minMaxRef = {
+    air_temp: { min: 15, max: 30 },
+    humidity: { min: 40, max: 60 },
+    water_temp: { min: 15, max: 30 },
+    water_pressure: { min: 0, max: 1.3 },
+    water_level: { min: 0, max: 100 },
+    tds_volt: { min: 1, max: 3 },
+    tds_level: { min: 1, max: 3 },
+    brightness: { min: 0, max: 4000 },
+    water_pulses: { min: 0, max: 2000 }
+  };
 
-  // 各項目の過去24時間における最小・最大値を計算
   const minMaxMap = {};
   Object.keys(TARGET_FIELDS).forEach(field => {
     const values = rawReportsCache.map(r => r[field]).filter(v => v !== null && v !== undefined);
@@ -1251,16 +1393,46 @@ function initOrUpdateChart() {
     }
   });
 
-  // 横軸のラベル（時:分）
-  const labels = rawReportsCache.map(r => r.display_time || '');
+  // 0:00 〜 23:00 の24コマの固定スロットを生成
+  const fixedLabels = [];
+  const fixedReports24 = [];
+  const statusTimeline = [];
+  const validAirTemps = [];
 
-  // 各データセットの組み立て
+  for (let hour = 0; hour < 24; hour++) {
+    const hourStr = String(hour).padStart(2, '0');
+    fixedLabels.push(`${hourStr}:00`);
+
+    const found = rawReportsCache.find(r => r.display_time && r.display_time.startsWith(`${hourStr}:`));
+
+    if (found) {
+      fixedReports24.push(found);
+      statusTimeline.push(found.total_status || 'success');
+      if (found.air_temp !== null && found.air_temp !== undefined) {
+        validAirTemps.push(found.air_temp);
+      }
+    } else {
+      fixedReports24.push({});
+      statusTimeline.push('success');
+    }
+  }
+
+  // 横書き1行の枠内に最高・最低気温を確実に書き込む
+  const maxEl = $('#stat_max_temp');
+  const minEl = $('#stat_min_temp');
+  if (validAirTemps.length > 0) {
+    if (maxEl) maxEl.textContent = `${Math.max(...validAirTemps).toFixed(1)} ℃`;
+    if (minEl) minEl.textContent = `${Math.min(...validAirTemps).toFixed(1)} ℃`;
+  } else {
+    if (maxEl) maxEl.textContent = `--.- ℃`;
+    if (minEl) minEl.textContent = `--.- ℃`;
+  }
+
+  // データセットの組み立て
   const datasets = Object.keys(TARGET_FIELDS).map(field => {
     const config = TARGET_FIELDS[field];
     const mm = minMaxMap[field];
-
-    // 生データと正規化値を別配列で作る（チャートには数値のみ渡す）
-    const rawValues = rawReportsCache.map(r => (r[field] === null || r[field] === undefined) ? null : r[field]);
+    const rawValues = fixedReports24.map(r => (r[field] === null || r[field] === undefined) ? null : r[field]);
     const normalizedValues = rawValues.map(v => {
       if (v === null || v === undefined) return null;
       return ((v - mm.min) / (mm.max - mm.min)) * 100;
@@ -1271,58 +1443,39 @@ function initOrUpdateChart() {
       borderColor: config.color,
       backgroundColor: config.color,
       tension: 0,
-      hidden: !config.defaultShow, // 最初は非表示にしたい場合、Chart.jsでは hidden: true にします
+      hidden: !config.defaultShow,
       data: normalizedValues,
-      // 生データを別プロパティで保持してツールチップなどで参照する
       rawValues: rawValues
     };
   });
-  
-  // すでにグラフがある場合は破棄してから再生成（オプション変更を完全に反映させるため）
+
   if (reportChartInstance) {
     reportChartInstance.destroy();
     reportChartInstance = null;
   }
 
-  // 初回グラフ生成（凡例機能は自動で有効化されます）
   reportChartInstance = new Chart(ctx, {
     type: 'line',
-    data: { labels: labels, datasets: datasets },
+    data: { labels: fixedLabels, datasets: datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      layout: {
-        padding: { left: 10, right: 10, top: 10, bottom: 10 }
-      },
+      layout: { padding: { left: 5, right: 15, top: 10, bottom: 10 } },
       scales: {
-        y: { 
-          min: 0, 
-          max: 100, 
-          title: { display: true, text: '最小〜最大間の割合(%)', font: { size: 16, weight: 'bold' } },
-          ticks: { font: { size: 14, weight: '500' } }
-        },
-        x: {
-          ticks: { font: { size: 14, weight: '500' } }
-        }
+        y: { min: 0, max: 100, title: { display: true, text: '最小〜最大間の割合(%)', font: { size: 15, weight: 'bold' } } },
+        x: { bounds: 'data' }
       },
       plugins: {
-        // 標準の凡例を表示。デフォルトでクリックでのON/OFFに対応しています
-        legend: { 
-          display: true,
-          position: 'top',
-          labels: { boxWidth: 14, padding: 15, font: { size: 15, weight: '600' } }
-        },
-        // マウスホバー（ツールチップ）のカスタム：0〜100%の値を無視して、生データと単位を表示
+        legend: { display: true, position: 'top', labels: { boxWidth: 14, padding: 12, font: { size: 14, weight: '600' } } },
         tooltip: {
           callbacks: {
             label: function(context) {
               const datasetLabel = context.dataset.label;
-              const datasetIndex = context.datasetIndex;
-              const dataIndex = context.dataIndex;
-              const rawData = (reportChartInstance && reportChartInstance.data && reportChartInstance.data.datasets && reportChartInstance.data.datasets[datasetIndex]) ? reportChartInstance.data.datasets[datasetIndex].rawValues[dataIndex] : null;
+              const dIdx = context.datasetIndex;
+              const rIdx = context.dataIndex;
+              const rawData = reportChartInstance.data.datasets[dIdx].rawValues[rIdx];
               const fieldKey = Object.keys(TARGET_FIELDS).find(k => TARGET_FIELDS[k].label === datasetLabel);
               const unit = fieldKey ? TARGET_FIELDS[fieldKey].unit : '';
-
               if (rawData === null || rawData === undefined) return `${datasetLabel}: データなし`;
               return `${datasetLabel}: ${rawData} ${unit}`;
             }
@@ -1331,7 +1484,30 @@ function initOrUpdateChart() {
           bodyFont: { size: 14, weight: '500' }
         }
       }
-    }
+    },
+    // 💡 修正：イベントを beforeDatasetsDraw に変更して上書きを完全防御
+    plugins: [{
+      id: 'alertBackground',
+      beforeDatasetsDraw: (chart) => {
+        const { ctx, chartArea } = chart;
+        if (!chartArea || statusTimeline.length === 0) return;
+        const count = 24;
+        const columnWidth = chartArea.width / (count - 1 || 1);
+        ctx.save();
+        for (let i = 0; i < count; i++) {
+          const status = statusTimeline[i];
+          if (status === 'danger' || status === 'warning') {
+            // 色が濃すぎると線が見づらくなるため絶妙な透明度(0.08 / 0.12)に調整しています
+            ctx.fillStyle = (status === 'danger') ? 'rgba(255, 0, 0, 0.08)' : 'rgba(255, 215, 0, 0.12)';
+            const left = chartArea.left + (i - 0.5) * columnWidth;
+            const drawLeft = Math.max(left, chartArea.left);
+            const drawWidth = Math.min(left + columnWidth, chartArea.right) - drawLeft;
+            if (drawWidth > 0) ctx.fillRect(drawLeft, chartArea.top, drawWidth, chartArea.height);
+          }
+        }
+        ctx.restore();
+      }
+    }]
   });
 }
 
