@@ -117,6 +117,8 @@ class HydroManager:
     REFILL_CONFIRM_COUNT = 3
     # バルブ閉期間中の異常流水判定パルス数
     FLOW_LEAK_THRESHOLD = 10
+    # 水開け時に予備USB出力をONにする時間（秒）
+    USB_RESERVE_ON_SECONDS = 30
     
     def __init__(self, config, db, device, sensors, camera, socketio):
         self.config = config
@@ -504,59 +506,8 @@ class HydroManager:
                 self.logger.error("Auto hourly picture capture failed.")
 
         # 3. 給水用電磁ボールバルブ（water_valve）の明け方定時開閉判定
-        v_open = self.schedule.get('valve_open')
-        v_close = self.schedule.get('valve_close')
-        
-        # 前回チェック時（1時間前）からのパルス増加量を算出
-        diff_pulses = self.flow_count - self.last_flow_count
-        self.last_flow_count = self.flow_count # 次回のために現在の値を記録
-        report['water_pulses'] = diff_pulses
-
-        if v_open is not None and v_close is not None:
-            # 1時間前の時点で「開いていた期間」が終わるタイミング（例: 閉じる直前、または開放期間の1時間ごと経過時）
-            if int(v_open) <= (now - timedelta(hours=1)).hour < int(v_close):
-                # この1時間（または今回の期間中）の総カウント数をログに出力してリセット
-                self.logger.info(f"New Feature [FLOW LOG]: Total water flow pulses in this window: {diff_pulses} counts.")
-            
-            # 1時間前の時点で「閉じていた期間」だった場合（本来水が流れてはいけない時間）
-            else:
-                # 💡 設定された定数（10回以上）パルスが検出された場合は異常とみなす
-                if diff_pulses >= self.FLOW_LEAK_THRESHOLD:
-                    self.logger.critical(f"🚨 FLOW EMERGENCY: {diff_pulses} pulses detected while water valve is CLOSED!")
-                    
-                    # セーフティとして再度バルブの閉じ命令を重ねて送り、2次的被害を防ぐ
-                    self.device.water_valve.off()
-                    
-                    # 💥 緊急事態のため、即時アラート送信（manager側で有効/無効判定を行う）
-                    self.send_emergency_if_enabled(
-                        f"【重大警報】水道バルブ閉鎖期間中に、異常な水流（{diff_pulses}パルス）を検知しました。\n"
-                        f"電磁弁の閉鎖不良、または配管からの二次漏水の可能性があります。至急現場を確認してください。"
-                    )
-
-            # 現在の時間帯に基づいて、これからの1時間のバルブ開閉を設定
-            if int(v_open) <= now.hour < int(v_close):
-                if not self.device.leak_detect.is_active:
-                    self.logger.info(f"Water window active ({now.hour}h) & Safety OK. Opening water valve.")
-                    self.device.water_valve.on()
-
-                    # 💡 さらに、もし今がちょうど水開けのタイミングだったら、予備USB出力も連動して30秒間ONにする特別な処理を追加
-                    nightly_active = bool(int(self.schedule.get('nightly_active', 0)))
-                    if int(v_open) == now.hour and nightly_active:
-                        self.logger.info(f"Water window started ({now.hour}h). Activating hot water purge via USB Reserve for 30s!")
-                        
-                        # 予備USB出力をON
-                        self.device.usb_reserve.on()
-                        
-                        # 30秒後に自動でOFFにする非ブロッキングタイマーを起動
-                        self.usb_reserve_timer = threading.Timer(30.0, self._usb_reserve_off_callback)
-                        self.usb_reserve_timer.start()
-
-                else:
-                    self.logger.critical("Cannot open water valve! Leak is currently detected at the opening window.")
-                    self.device.water_valve.off()
-            else:
-                self.logger.info("Out of water window. Closing water valve.")
-                self.device.water_valve.off()
+        water_pulses = self._manage_water_valve_and_flow(now)
+        report['water_pulses'] = water_pulses
 
         # 4. 💡 毎時00分のタイミングで「常時漏水監視タスク」の状態を再評価・管理
         self._manage_leak_detection_task()
@@ -648,6 +599,65 @@ class HydroManager:
         v_close = self.schedule.get('valve_close')
         now = datetime.now()
         return v_open is not None and v_close is not None and int(v_open) <= now.hour < int(v_close)
+
+    def _manage_water_valve_and_flow(self, now):
+        # 前回チェック時（1時間前）からのパルス増加量を算出
+        diff_pulses = self.flow_count - self.last_flow_count
+        self.logger.info(f"Water flow pulse count since last check: {diff_pulses} counts. {self.last_flow_count} to {self.flow_count}.")
+        self.last_flow_count = self.flow_count # 次回のために現在の値を記録
+
+        v_open = self.schedule.get('valve_open')
+        v_close = self.schedule.get('valve_close')
+
+        if v_open is None or v_close is None:
+            self.logger.warning("Valve schedule is not properly configured. Skipping water valve management.")
+            return
+
+        # 1時間前の時点で「開いていた期間」が終わるタイミング（例: 閉じる直前、または開放期間の1時間ごと経過時）
+        if int(v_open) <= (now - timedelta(hours=1)).hour < int(v_close):
+            # この1時間（または今回の期間中）の総カウント数をログに出力してリセット
+            self.logger.info(f"New Feature [FLOW LOG]: Total water flow pulses in this window: {diff_pulses} counts.")
+
+        # 1時間前の時点で「閉じていた期間」だった場合（本来水が流れてはいけない時間）
+        else:
+            # 💡 設定された定数（10回以上）パルスが検出された場合は異常とみなす
+            if diff_pulses >= self.FLOW_LEAK_THRESHOLD:
+                self.logger.critical(f"🚨 FLOW EMERGENCY: {diff_pulses} pulses detected while water valve is CLOSED!")
+
+                # セーフティとして再度バルブの閉じ命令を重ねて送り、2次的被害を防ぐ
+                self.device.water_valve.off()
+
+                # 💥 緊急事態のため、即時アラート送信（manager側で有効/無効判定を行う）
+                self.send_emergency_if_enabled(
+                    f"【重大警報】水道バルブ閉鎖期間中に、異常な水流（{diff_pulses}パルス）を検知しました。\n"
+                    f"電磁弁の閉鎖不良、または配管からの二次漏水の可能性があります。至急現場を確認してください。"
+                )
+
+        # 現在の時間帯に基づいて、これからの1時間のバルブ開閉を設定
+        if int(v_open) <= now.hour < int(v_close):
+            if bool(int(self.schedule.get('valve_active', 0))):
+                if not self.device.leak_detect.is_active:
+                    self.logger.info(f"Water window active ({now.hour}h) & Safety OK. Opening water valve.")
+                    self.device.water_valve.on()
+                else:
+                    self.logger.critical("Cannot open water valve! Leak is currently detected at the opening window.")
+                    self.device.water_valve.off()
+
+            # 💡 さらに、もし今がちょうど水開けのタイミングだったら、予備USB出力も連動して30秒間ONにする特別な処理を追加
+            nightly_active = bool(int(self.schedule.get('nightly_active', 0)))
+            if int(v_open) == now.hour and nightly_active:
+                self.logger.info(f"Water window started ({now.hour}h). Activating hot water purge via USB Reserve for 30s!")
+
+                # 予備USB出力をON
+                self.device.usb_reserve.on()
+
+                # 30秒後に自動でOFFにする非ブロッキングタイマーを起動
+                self.usb_reserve_timer = threading.Timer(self.USB_RESERVE_ON_SECONDS, self._usb_reserve_off_callback)
+                self.usb_reserve_timer.start()
+
+        else:
+            self.logger.info("Out of water window. Closing water valve.")
+            self.device.water_valve.off()
 
     def _manage_leak_detection_task(self):
         """バルブが開いている時間帯、または漏水中の時だけ監視ループを回すエコ＆自動翌日リセット設計"""
@@ -1431,6 +1441,11 @@ class HydroManager:
         # ポンプを安全に停止＆タイマークリア
         self._subpump_stop_callback()
         
+        # サブポンプONボタンから開始の場合はDB記録なし
+        if trigger == 'unknown':
+            self.logger.info("Subpump started manually. No refill record will be saved.")
+            return
+
         # 実際に動いていた秒数を計算
         end_time = time.time()
         elapsed_seconds = int(end_time - start_time)
@@ -1450,6 +1465,12 @@ class HydroManager:
                 'main_bottom': self.device.float_main_bottom.is_active,
                 'sub': self.device.float_sub.is_active
             })
+
+            # 記録できたら今回の記録のみbroadcastでフロントに通知（履歴更新）
+            latest_record = self.db.get_latest_refill_record()
+            if latest_record:
+                self.broadcast('refill_record', latest_record)
+
         except Exception as e:
             self.logger.error(f"Failed to insert refill record to DB: {e}")
 

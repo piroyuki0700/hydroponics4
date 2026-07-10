@@ -1370,9 +1370,9 @@ function initOrUpdateChart() {
   Chart.defaults.font.weight = '500';
 
   const minMaxRef = {
-    air_temp: { min: 15, max: 30 },
-    humidity: { min: 40, max: 60 },
-    water_temp: { min: 15, max: 30 },
+    air_temp: { min: 15, max: 35 },
+    humidity: { min: 0, max: 100 },
+    water_temp: { min: 15, max: 35 },
     water_pressure: { min: 0, max: 1.3 },
     water_level: { min: 0, max: 100 },
     tds_volt: { min: 1, max: 3 },
@@ -1438,6 +1438,30 @@ function initOrUpdateChart() {
       return ((v - mm.min) / (mm.max - mm.min)) * 100;
     });
 
+    // 💡 拡張：データごとにドットの「形状」と「大きさ」を変える配列を作成
+    const pointStyles = [];
+    const pointRadii = [];
+    const statusArray = [];
+
+    fixedReports24.forEach(r => {
+      const itemStatus = r[`${field}_status`] || 'success';
+      statusArray.push(itemStatus);
+
+      if (itemStatus === 'danger') {
+        // 💥 危険時は「バツ印（crossRot）」にしてサイズを大きく
+        pointStyles.push('crossRot');
+        pointRadii.push(6);
+      } else if (itemStatus === 'warning') {
+        // ⚠️ 警告時は「三角形（triangle）」にしてサイズをやや大きく
+        pointStyles.push('triangle');
+        pointRadii.push(4);
+      } else {
+        // 正常時は丸形(circle)でサイズを小さく
+        pointStyles.push('circle');
+        pointRadii.push(2);
+      }
+    });
+
     return {
       label: config.label,
       borderColor: config.color,
@@ -1445,7 +1469,19 @@ function initOrUpdateChart() {
       tension: 0,
       hidden: !config.defaultShow,
       data: normalizedValues,
-      rawValues: rawValues
+      rawValues: rawValues,
+
+      // 💡 形状(Style)と大きさ(Radius)に、作成した動的配列を指定
+      pointStyle: pointStyles,
+      pointRadius: pointRadii,
+      pointHoverRadius: 7, // マウスホバー時はしっかり強調
+
+      // 💡 色は項目ごとに設定されている本来の色をそのまま適用（固定）
+      pointBackgroundColor: config.color,
+      pointBorderColor: config.color,
+      pointBorderWidth: 2, // バツ印などの線幅を太くして見やすくする
+
+      itemStatuses: statusArray
     };
   });
 
