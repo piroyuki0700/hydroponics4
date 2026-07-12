@@ -611,7 +611,7 @@ class HydroManager:
 
         if v_open is None or v_close is None:
             self.logger.warning("Valve schedule is not properly configured. Skipping water valve management.")
-            return
+            return diff_pulses
 
         # 1時間前の時点で「開いていた期間」が終わるタイミング（例: 閉じる直前、または開放期間の1時間ごと経過時）
         if int(v_open) <= (now - timedelta(hours=1)).hour < int(v_close):
@@ -658,6 +658,8 @@ class HydroManager:
         else:
             self.logger.info("Out of water window. Closing water valve.")
             self.device.water_valve.off()
+
+        return diff_pulses
 
     def _manage_leak_detection_task(self):
         """バルブが開いている時間帯、または漏水中の時だけ監視ループを回すエコ＆自動翌日リセット設計"""
