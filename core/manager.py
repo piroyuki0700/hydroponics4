@@ -1365,7 +1365,7 @@ class HydroManager:
         # 💡 各種初期値をローカル変数に保持
         start_time = time.time()
         start_level = self.sensors.read_water_level()
-        trigger = request.get('trigger', 'unknown') # triggerがない場合は'unknown'で記録
+        trigger = request.get('trigger', 'none') # triggerがない場合は'none'で記録
 
         # ポンプをON
         self.device.ssr_sub_pump.on()
@@ -1444,7 +1444,7 @@ class HydroManager:
         self._subpump_stop_callback()
         
         # サブポンプONボタンから開始の場合はDB記録なし
-        if trigger == 'unknown':
+        if trigger == 'none':
             self.logger.info("Subpump started manually. No refill record will be saved.")
             return
 
