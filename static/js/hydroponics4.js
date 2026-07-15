@@ -172,6 +172,11 @@ function websocketConnect()
     Object.assign(master, data);
   });
 
+  webSocket.on('refill_record', (data) => {
+    setValueRefillUpdate(data, true);
+    Object.assign(master, data);
+  });
+
   webSocket.on('inactive_color', (data) => {
     setValueInactiveColor(data);
     Object.assign(master, data);
@@ -270,7 +275,7 @@ function websocket_close(event)
   if (reconnectBtn) reconnectBtn.style.display = 'block';
   
   setValuePumpStatus({'status': 'manual_stop', 'seconds': 0});
-  setValueRefillUpdate({ 'subpump_on': false});
+  setValueRefillUpdate({'subpump_on': false});
 
   // 再接続時にサーバーから最新データを綺麗に取り直すため、master内の記録を一度クリア
   if (master) {
@@ -601,7 +606,7 @@ function setValueTmpPicture(data) {
 //
 // 設定：水の補充・履歴ログの反映（サーバーから受信したデータの画面反映）
 //
-function setValueRefillUpdate(data) {
+function setValueRefillUpdate(data, append = false) {
   const subpumpWorking = $('#subpump_working');
   
   // サブポンプ動作状態
@@ -645,8 +650,13 @@ function setValueRefillUpdate(data) {
   // 📜 給水履歴ログの反映（サーバー側で連結済みのテキストを一括流し込み）
   const refillLog = $('#refill_log');
   if (refillLog && 'refill_records' in data) {
-    // 💡 届いた文字列をそのまま代入するだけ！
-    refillLog.value = data['refill_records'];
+    if (append) {
+      // 追加モードの場合は、既存のログに追記する
+      refillLog.value += data['refill_records'];
+    } else {
+      // 上書きモードの場合は、既存のログを置き換える
+      refillLog.value = data['refill_records'];
+    }
     
     // 常に最新のログ（最下部）が見えるように自動スクロール
     requestAnimationFrame(() => {

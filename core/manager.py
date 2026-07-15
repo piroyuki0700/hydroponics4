@@ -795,7 +795,7 @@ class HydroManager:
         initial_payload.update(self.db.get_latest_picture(self.config.PIC_DIR) or {})
         
         refill_data = {}
-        refill_data.update(self.db.get_latest_refill_record() or {})
+        refill_data.update(self.db.get_latest_refill_records() or {})
         refill_data.update(self.get_subpump_status())
         initial_payload.update(refill_data)
 
@@ -1470,7 +1470,7 @@ class HydroManager:
             })
 
             # 記録できたら今回の記録のみbroadcastでフロントに通知（履歴更新）
-            latest_record = self.db.get_latest_refill_record()
+            latest_record = self.db.get_latest_refill_records(1)
             if latest_record:
                 self.broadcast('refill_record', latest_record)
 
