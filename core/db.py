@@ -201,9 +201,9 @@ class HydroDB:
         sub = 'ー' if data.get('sub') is None else ('○' if data['sub'] == 1 else '×')
         return f"{data.get('created_at')}({data.get('on_seconds')} sec) {data.get('trigger')} 上:{main_top} 下:{main_bottom} 補:{sub} （{before}％→{after}％)"
 
-    def get_latest_refill_record(self):
+    def get_latest_refill_records(self, no=3):
         """最新3件の給水履歴を改行で連結した1本の文字列としてフロントに返す"""
-        dic_array = self.getlatest('refill_record', 3)
+        dic_array = self.getlatest('refill_record', no)
         
         # 3件のログ文字列をリスト化。新しい履歴が下に来るよう、古い順に並べる。
         records_list = [self.make_refill_record_string(data) for data in reversed(dic_array)]
