@@ -153,6 +153,7 @@ class HydroManager:
         # 💡 流量センサー（パルス信号）がONになるたびに自動でカウンターを+1するイベントを登録
         # gpiozeroのButtonクラスが持つバックグラウンド機能を利用するため、競合せず正確に数えます
         if hasattr(self.device, 'water_flow') and self.device.water_flow:
+            self.logger.info("Registering water flow pulse callback for flow counting.")
             self.device.water_flow.when_activated = self._pulse_counter_callback
 
     def _is_schedule_active(self):

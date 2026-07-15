@@ -47,11 +47,12 @@ document.addEventListener('DOMContentLoaded', () => {
 //
 function reconnectButtonClick()
 {
-  if (webSocket == null) {
-    websocketConnect();
-    connectRetry = true;
-  } else {
+  if (webSocket.connected) {
     printDebugMessage("websocket is already connected.");
+  } else {
+    printDebugMessage("Connecting websocket...");
+    webSocket.open();
+    connectRetry = true;
   }
 }
 
@@ -60,11 +61,12 @@ function reconnectButtonClick()
 //
 function disconnectButtonClick()
 {
-  if (webSocket == null) {
-    printDebugMessage("websocket is not connected.");
-  } else {
+  if (webSocket.connected) {
+    printDebugMessage("Disconnecting websocket...");
     connectRetry = false;
     webSocket.close();
+  } else {
+    printDebugMessage("websocket is not connected.");
   }
 }
 
@@ -103,12 +105,6 @@ function websocketConnect()
   {
     clearTimeout(timerIdReconnect);
     timerIdReconnect = null;
-  }
-
-  if (webSocket != null)
-  {
-    printDebugMessage("already connected.");
-    return;
   }
 
 // 🔌 Socket.IO の初期化（自動再接続を完全に無効化）
@@ -270,7 +266,6 @@ function websocket_open()
 function websocket_close(event)
 {
   printDebugMessage("websocket closed.");
-  webSocket = null;
   const reconnectBtn = $('#reconnectButton');
   if (reconnectBtn) reconnectBtn.style.display = 'block';
   
@@ -1370,13 +1365,13 @@ function initOrUpdateChart() {
   Chart.defaults.font.weight = '500';
 
   const minMaxRef = {
-    air_temp: { min: 15, max: 35 },
+    air_temp: { min: 15, max: 40 },
     humidity: { min: 0, max: 100 },
-    water_temp: { min: 15, max: 35 },
+    water_temp: { min: 15, max: 40 },
     water_pressure: { min: 0, max: 1.3 },
     water_level: { min: 0, max: 100 },
     tds_volt: { min: 1, max: 3 },
-    tds_level: { min: 1, max: 3 },
+    tds_level: { min: 0, max: 4 },
     brightness: { min: 0, max: 4000 },
     water_pulses: { min: 0, max: 2000 }
   };
