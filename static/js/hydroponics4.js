@@ -20,6 +20,23 @@ const server_uri = location.origin; // Socket.IO uses the same origin and port
 const $ = (selector, context = document) => context.querySelector(selector);
 const $$ = (selector, context = document) => Array.from(context.querySelectorAll(selector));
 
+// 📝 テキスト入力欄・数値入力欄
+  const textInputItems = [
+  "time_morning", "time_noon", "time_evening", "time_night",
+  "morning_on", "morning_off", "noon_on", "noon_off", "evening_on", "evening_off", "night_on", "night_off",
+  "refill_max_seconds", "forced_refill_hour", "valve_open", "valve_close",
+  "fert1_seconds", "fert2_seconds", "fert3_seconds", "fert4_seconds", "fert_adjust_hour",
+  "camera1", "camera2", "camera3", "camera4", "camera5",
+  "minute_start", "minute_stop", "minute_refill"  ,
+  "notify_time"
+];
+
+// 🔄 トグルスイッチ（チェックボックス）
+const toggleItems = [
+  'schedule_active', 'room_fan_active', 'nightly_active', 'camera_active', 'refill_active', 'forced_refill_active',
+  'valve_active', 'fert_adjust_active', 'notify_active', 'normal_active', 'emergency_active'
+];
+
 //
 // 初期化処理
 //
@@ -321,6 +338,13 @@ function websocket_initial_data(data)
 // websocketサーバーへデータ送信（個別レスポンス処理対応版）
 //
 function websocket_send(data) {
+  // 💡 もしwebSocketが未接続または切断状態の場合は、再接続を試みる
+  if (!webSocket) {
+    websocketConnect();
+  } else if (!webSocket.connected) {
+    webSocket.open();
+  }
+
   if (webSocket && webSocket.connected) {
     webSocket.emit('command', data, (response) => {
       if (response) {
@@ -453,33 +477,12 @@ function setValueBasic(data)
 //
 function setValueSchedule(data)
 {
-  // 時刻指定なしにしたいとき（マイナス値は無効として空文字にする処理）
-  const items = [
-    "time_morning", "time_noon", "time_evening", "time_night",
-    "camera1", "camera2", "camera3", "camera4", "camera5",
-    "refill_max_seconds", "valve_open", "valve_close",
-    "fert1_seconds", "fert2_seconds", "fert3_seconds", "fert4_seconds", "fert_adjust_hour"
-  ];
-
-  for (const item of items) {
-    if (data[item] < 0)
-      data[item] = "";
-  }
-
   // 📝 テキスト入力欄・数値入力欄への値のセット
-   const valItems = [
-    "time_morning", "time_noon", "time_evening", "time_night",
-    "morning_on", "morning_off", "noon_on", "noon_off", "evening_on", "evening_off",
-    "night_on", "night_off",
-    "refill_max_seconds", "valve_open", "valve_close",
-    "fert1_seconds", "fert2_seconds", "fert3_seconds", "fert4_seconds", "fert_adjust_hour",
-    "camera1", "camera2", "camera3", "camera4", "camera5",
-    "minute_start", "minute_stop", "minute_refill"  ,
-    "notify_time"
-  ];
-
-  valItems.forEach(name => {
+  textInputItems.forEach(name => {
     if (name in data) {
+      // 時刻指定なしにしたいとき（マイナス値は無効として空文字にする処理）
+      if (data[name] < 0)
+        data[name] = "";
       const inputEl = $(`input[name="${name}"]`);
       if (inputEl) inputEl.value = data[name];
     }
@@ -487,11 +490,6 @@ function setValueSchedule(data)
 
   // 🔄 トグルスイッチ（チェックボックス）のON/OFF制御
   // 新しい「fert_adjust（液肥の自動調整）」を追加しました
-  const toggleItems = [
-    'schedule_active', 'room_fan_active', 'nightly_active', 'camera_active', 'refill_active',
-    'valve_active', 'fert_adjust_active', 'notify_active', 'normal_active', 'emergency_active'
-  ];
-
   toggleItems.forEach(name => {
     if (name in data) {
       const toggleEl = $(`input[name="${name}"]`);
@@ -807,28 +805,13 @@ function scheduleCommitClick() {
 
   // トグルスイッチ（チェックボックス）の確定処理
   // FormDataはチェックの外れているスイッチの値を送信しない性質があるため、ここで"1"または"0"を確定させます
-  const toggles = [
-    "schedule_active", "room_fan_active", "nightly_active", "camera_active", "refill_active",
-    "valve_active", "fert_adjust_active", "notify_active", "normal_active", "emergency_active"
-  ];
-  
-  toggles.forEach(name => {
+  toggleItems.forEach(name => {
     const el = $(`input[name="${name}"]`);
     data[name] = el && el.checked ? "1" : "0";
   });
 
   // 時刻指定なしにしたいとき（空欄の場合は -1 に変換して送信）
-  const items = [
-  //  "time_spot1", "time_spot2", "time_spot3", // ⚠️ 旧データの互換性・データベース保護のために残す場合はこのままでOK
-    "time_morning", "time_noon", "time_evening", "time_night",
-    "morning_on", "morning_off", "noon_on", "noon_off", "evening_on", "evening_off", "night_on", "night_off",
-    "refill_max_seconds", "valve_open", "valve_close",
-    "fert1_seconds", "fert2_seconds", "fert3_seconds", "fert4_seconds", "fert_adjust_hour",
-    "camera1", "camera2", "camera3", "camera4", "camera5",
-    "notify_time"
-  ];
-
-  for (const item of items) {
+  for (const item of textInputItems) {
     // フォームに存在し、かつ空文字の場合のみ -1 をセット
     if (data[item] === "")
       data[item] = "-1";

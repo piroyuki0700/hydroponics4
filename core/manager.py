@@ -1082,8 +1082,6 @@ class HydroManager:
         self.manual_timer_stop()
         self.switcher.stop()
         seconds = int(request.get('seconds', 0))
-        if seconds < 0:
-            seconds = 0
         self.device.pump_main_a.on()
         self.device.pump_main_b.off()
         if seconds > 0:
@@ -1222,7 +1220,14 @@ class HydroManager:
             return self.make_result(False, "refill is disabled.")
 
         trigger = request.get('trigger')
-        if trigger == 'manual_forced':
+        forced_refill_active = bool(int(self.schedule.get('forced_refill_active', 0)))
+        forced_refill_hour = int(self.schedule.get('forced_refill_hour', 0))
+        current_hour = datetime.now().hour
+        if (trigger == 'default' and forced_refill_active and forced_refill_hour == current_hour):
+            self.logger.info("Forced refill is active and current hour matches. Treating as forced refill.")
+            trigger = 'default_forced'
+
+        if trigger == 'manual_forced' or trigger == 'default_forced':
             # 'manual_forced' オプション：上限スイッチが感知（満水ではない）場合に補充
             perform_refill = not self.device.float_main_top.is_active
         else:
@@ -1400,7 +1405,7 @@ class HydroManager:
 
             # 💡 ループ条件: ポンプがアクティブかつ、タイマーがまだ存在している（＝タイムアウトや手動停止していない）間
             while self.device.ssr_sub_pump.is_active and self.subpump_timer is not None:
-                gevent.sleep(1.0)
+                gevent.sleep(0.5)
                 
                 # A) メインタンクの上限フロートスイッチ判定
                 if self.device.float_main_top.is_active:

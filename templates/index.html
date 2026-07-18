@@ -174,22 +174,22 @@
             <tr>
               <td class="vmiddle">動作スイッチ</td>
               <td class="system_switch">
-                全体動作
-                <div class="form-check form-switch d-inline-block align-middle ms-1">
+                <div class="form-check form-switch d-inline-block align-middle">
                   <input class="form-check-input" type="checkbox" role="switch" id="schedule_active_switch" name="schedule_active" value="1">
                 </div>
+                全体動作
               </td>
               <td colspan="2">
-                室内扇風機
-                <div class="form-check form-switch d-inline-block align-middle ms-1">
+                <div class="form-check form-switch d-inline-block align-middle">
                   <input class="form-check-input" type="checkbox" role="switch" id="room_fan_active_switch" name="room_fan_active" value="1">
                 </div>
+                室内扇風機
               </td>
               <td>
-                夜間SW
-                <div class="form-check form-switch d-inline-block align-middle ms-1">
+                <div class="form-check form-switch d-inline-block align-middle">
                   <input class="form-check-input" type="checkbox" role="switch" id="nightly_active_switch" name="nightly_active" value="1">
                 </div>
+                夜間SW
               </td>
             </tr>
             <tr>
@@ -229,19 +229,20 @@
             </tr> -->
             <tr>
               <td class="vmiddle">水の補充</td>
-              <td colspan="2 ">
-                <div class="form-check form-switch d-inline-block align-middle me-1">
+              <td colspan="4">
+                <div class="form-check form-switch d-inline-block align-middle">
                   <input class="form-check-input" type="checkbox" role="switch" id="refill_active_switch" name="refill_active" value="1">
                 </div>
-                最大<input class="input_number" name="refill_max_seconds" type="text" value="">秒間
-              </td>
-              <td colspan="2">
-                バルブ開放
-                <div class="form-check form-switch d-inline-block align-middle me-1">
+                <span class="me-4">最大 <input class="input_number" name="refill_max_seconds" type="text" value=""> 秒間</span>
+                <div class="form-check form-switch d-inline-block align-middle">
+                  <input class="form-check-input" type="checkbox" role="switch" id="forced_refill_active_switch" name="forced_refill_active" value="1">
+                </div>
+                <span class="me-4">強制 <input class="input_number" name="forced_refill_hour" type="text" value=""> 時</span>
+                <div class="form-check form-switch d-inline-block align-middle">
                   <input class="form-check-input" type="checkbox" role="switch" id="valve_active_switch" name="valve_active" value="1">
                 </div>
-                <input class="input_number" name="valve_open" type="text" value=""> 
-                〜<input class="input_number" name="valve_close" type="text" value=""> 時
+                <span>バルブ開放 <input class="input_number" name="valve_open" type="text" value="">
+                〜 <input class="input_number" name="valve_close" type="text" value=""> 時</span>
               </td>
             </tr>
             <tr>
@@ -253,44 +254,41 @@
                 5号<input class="input_number" name="fert3_seconds" type="text" value=""> 秒、
                 9号<input class="input_number" name="fert4_seconds" type="text" value=""> 秒
                 </span>
-                <div class="form-check form-switch d-inline-block align-middle me-1">
+                <div class="form-check form-switch d-inline-block align-middle">
                   <input class="form-check-input" type="checkbox" role="switch" id="fert_adjust_active_switch" name="fert_adjust_active" value="1">
                 </div>
-                自動調整<input class="input_number" name="fert_adjust_hour" type="text" value=""> 時
+                自動調整 <input class="input_number" name="fert_adjust_hour" type="text" value=""> 時
             </tr>
             <tr>
               <td class="vmiddle">カメラ撮影</td>
               <td colspan="4">
-                <div class="form-check form-switch d-inline-block align-middle me-2">
+                <div class="form-check form-switch d-inline-block align-middle">
                   <input class="form-check-input" type="checkbox" role="switch" id="camera_active_switch" name="camera_active" value="1">
                 </div>
                 撮影有効
-                <span class="ms-3">
-                  <input class="input_number" name="camera1" id="camera1" type="text" value=""> 時、
-                  <input class="input_number" name="camera2" type="text" value=""> 時、
-                  <input class="input_number" name="camera3" type="text" value=""> 時、
-                  <input class="input_number" name="camera4" type="text" value=""> 時、
-                  <input class="input_number" name="camera5" type="text" value=""> 時
-                </span>
+                <input class="input_number" name="camera1" type="text" value=""> 時、
+                <input class="input_number" name="camera2" type="text" value=""> 時、
+                <input class="input_number" name="camera3" type="text" value=""> 時、
+                <input class="input_number" name="camera4" type="text" value=""> 時、
+                <input class="input_number" name="camera5" type="text" value=""> 時
               </td>
             </tr>
             <tr>
               <td class="vmiddle">Discord通知</td>
               <td colspan="2">
-                <div class="form-check form-switch d-inline-block align-middle me-1">
+                <div class="form-check form-switch d-inline-block align-middle">
                   <input class="form-check-input" type="checkbox" role="switch" id="notify_active_switch" name="notify_active" value="1">
                 </div>
-                定期報告
-                <input class="input_number" name="notify_time" type="text" value=""> 時
+                定期報告 <input class="input_number" name="notify_time" type="text" value=""> 時
               </td>
               <td>
-                <div class="form-check form-switch d-inline-block align-middle me-1">
+                <div class="form-check form-switch d-inline-block align-middle">
                   <input class="form-check-input" type="checkbox" role="switch" id="normal_active_switch" name="normal_active" value="1">
                 </div>
                 通常報告
               </td>
               <td>
-                <div class="form-check form-switch d-inline-block align-middle me-1">
+                <div class="form-check form-switch d-inline-block align-middle">
                   <input class="form-check-input" type="checkbox" role="switch" id="emergency_active_switch" name="emergency_active" value="1">
                 </div>
                 緊急報告
@@ -344,7 +342,7 @@
               </div>
             </div>
           </div>
-          <div class="content_info">
+          <div class="content_info bg-body-secondary border border-secondary rounded-3 p-2">
             <div class="content_countdown">
               <div id="pump_working">
                 <i class="bi bi-arrow-repeat bi-spin text-primary"></i>
@@ -368,13 +366,17 @@
           <div class="d-flex w-100">
             <!-- 左側：ボタン類 -->
             <div class="content_control">
-              <i class="bi bi-droplet text-secondary m-1 d-block"> 水の補充</i>
+              <div class="bi bi-droplet text-secondary m-1 d-block"> 水の補充
+                <span class="small ms-5">ボールバルブ</span>
+                <button onclick="debugButtonExec('test_water_valve', 'on')" class="btn btn-secondary command_button">開放</button>
+                <button onclick="debugButtonExec('test_water_valve', 'off')" class="btn btn-secondary command_button">閉鎖</button>
+              </div>
               <div class="ms-2 mt-2">
                 <button class="btn btn-secondary command_button ms-3" onclick="subPumpButtonClick('start')">ON</button>
                 <button class="btn btn-secondary command_button" onclick="subPumpButtonClick('stop')">OFF</button>
                 <button class="btn btn-success command_button ms-3" onclick="subPumpButtonClick('refill', 'manual_normal')">補充</button>
                 <button class="btn btn-danger command_button" onclick="subPumpButtonClick('refill', 'manual_forced')">強制補充</button>
-                <button class="btn btn-secondary command_button ms-3" onclick="subPumpButtonClick('update')">更新</button>
+                <button class="btn btn-success command_button ms-3" onclick="debugButtonExec('force_fertilize')">液肥追加</button>
               </div>
             </div>
             <!-- 右側：ステータス表示 -->
@@ -383,6 +385,7 @@
                 <div>
                   <span class="border rounded p-1 bg-white small text-dark">バルブ<i id="icon_water_valve" class="bi bi-check-circle text-success"></i></span>
                   <span class="border rounded p-1 bg-white small text-dark">水位 <i id="subpump_working" class="bi bi-arrow-repeat text-secondary"></i> <span id="refill_level"></span>％</span>
+                  <button class="btn btn-secondary command_button" onclick="subPumpButtonClick('update')">更新</button>
                 </div><div>
                   <span class="border rounded p-1 bg-white small text-dark">メイン上 <i id="icon_float_main_top" class="bi bi-check-circle text-success"></i></span>
                   <span class="border rounded p-1 bg-white small text-dark">メイン下 <i id="icon_float_main_bottom" class="bi bi-check-circle text-success"></i></span>
@@ -634,15 +637,11 @@
           </span>
           <span class="ms-3">
             <span class="small">Test:</span>
-            <button onclick="debugButtonExec('make_report')" class="btn btn-secondary command_button">定時処理</button>
             <button onclick="debugButtonExec('test_discord')" class="btn btn-secondary command_button">Discord</button>
           </span>
         </div>
         <div class="mt-0">
           <span class="border_debug">
-            <span class="small ms-3">Water Valve:</span>
-            <button onclick="debugButtonExec('test_water_valve', 'on')" class="btn btn-secondary command_button">On</button>
-            <button onclick="debugButtonExec('test_water_valve', 'off')" class="btn btn-secondary command_button">Off</button>
             <span class="small">SSR1(sub pump):</span>
             <button onclick="debugButtonExec('test_ssr1', 'on')" class="btn btn-secondary command_button">On</button>
             <button onclick="debugButtonExec('test_ssr1', 'off')" class="btn btn-secondary command_button">Off</button>
@@ -652,28 +651,22 @@
           </span>
         </div>
         <div class="mt-0">
-          <span class="border_debug">
-            <span class="small">Fert1:</span>
-            <button onclick="debugButtonExec('test_fert_pump', 'on', 1)" class="btn btn-secondary command_button">On</button>
-            <button onclick="debugButtonExec('test_fert_pump', 'off', 1 )" class="btn btn-secondary command_button">Off</button>
-            <span class="small ms-2">Fert2:</span>
-            <button onclick="debugButtonExec('test_fert_pump', 'on', 2)" class="btn btn-secondary command_button">On</button>
-            <button onclick="debugButtonExec('test_fert_pump', 'off', 2 )" class="btn btn-secondary command_button">Off</button> 
-            <span class="small ms-2">Fert3:</span>
-            <button onclick="debugButtonExec('test_fert_pump', 'on', 3)" class="btn btn-secondary command_button">On</button>
-            <button onclick="debugButtonExec('test_fert_pump', 'off', 3 )" class="btn btn-secondary command_button">Off</button> 
-            <span class="small ms-2">Fert4:</span>
-            <button onclick="debugButtonExec('test_fert_pump', 'on', 4)" class="btn btn-secondary command_button">On</button>
-            <button onclick="debugButtonExec('test_fert_pump', 'off', 4 )" class="btn btn-secondary command_button">Off</button>
-            <span class="small ms-3">自動調整:</span>
-            <button onclick="debugButtonExec('force_fertilize')" class="btn btn-success command_button">即実行</button>
-          </span>
+          <button onclick="clearMessageClick()" class="btn btn-light command_button border-dark">clear</button>
+          <span class="small ms-5">Fert1:</span>
+          <button onclick="debugButtonExec('test_fert_pump', 'on', 1)" class="btn btn-secondary command_button">On</button>
+          <button onclick="debugButtonExec('test_fert_pump', 'off', 1 )" class="btn btn-secondary command_button">Off</button>
+          <span class="small ms-2">Fert2:</span>
+          <button onclick="debugButtonExec('test_fert_pump', 'on', 2)" class="btn btn-secondary command_button">On</button>
+          <button onclick="debugButtonExec('test_fert_pump', 'off', 2 )" class="btn btn-secondary command_button">Off</button>
+          <span class="small ms-2">Fert3:</span>
+          <button onclick="debugButtonExec('test_fert_pump', 'on', 3)" class="btn btn-secondary command_button">On</button>
+          <button onclick="debugButtonExec('test_fert_pump', 'off', 3 )" class="btn btn-secondary command_button">Off</button>
+          <span class="small ms-2">Fert4:</span>
+          <button onclick="debugButtonExec('test_fert_pump', 'on', 4)" class="btn btn-secondary command_button">On</button>
+          <button onclick="debugButtonExec('test_fert_pump', 'off', 4 )" class="btn btn-secondary command_button">Off</button>
         </div>
         <textarea class="content_message border border-dark" id="debug_message"></textarea>
-        <div class="mt-0">
-          <button onclick="clearMessageClick()" class="btn btn-secondary command_button">clear</button>
-        </div>
-      </div>
+     </div>
     </div>
   </div>
 </div>

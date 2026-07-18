@@ -370,7 +370,7 @@ class HydroSensors:
     def read_pressure_voltage(self):
         """水圧センサーの電圧測定（💡5回連続測定によるチャタリングノイズフィルタ搭載）"""
         if not IS_HARDWARE_OK:
-            return round(random.uniform(1.5, 3.5), 3)
+            return round(random.uniform(self.config.VOLTAGE_EMPTY, self.config.VOLTAGE_FULL), 3)
             
         if not self.ads: 
             return None
@@ -425,5 +425,5 @@ class HydroSensors:
         # 💡 実測電圧の傾きに基づく一次関数で正確にパーセント化
         level = (voltage - v_empty) / (v_full - v_empty) * 100.0
         
-        # 0%〜100%の範囲を絶対に飛び出さないようにクリッピング
+        # マイナスにならないようにクリッピング
         return round(max(0.0, level), 1)

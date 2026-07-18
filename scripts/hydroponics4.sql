@@ -57,7 +57,9 @@ CREATE TABLE `setting_schedule` (
   
   -- 自動給水設定 (Refill)
   `refill_active` BOOLEAN DEFAULT TRUE,
-  `refill_max_seconds` INT DEFAULT 180, -- 給水の最大ON時間（秒）
+  `refill_max_seconds` INT DEFAULT 280, -- 給水の最大ON時間（秒）
+  `forced_refill_active` BOOLEAN DEFAULT FALSE, -- 強制給水の有効化
+  `forced_refill_hour` INT DEFAULT 5, -- 強制給水のON時刻（時）
 
   `valve_active` BOOLEAN DEFAULT TRUE, -- 給水用バルブのON/OFF制御有効化
   `valve_open` INT DEFAULT 4, -- 給水用バルブの開時刻（時）
