@@ -79,7 +79,7 @@ class PumpSwitcher:
 
                 # 循環検知の確認
                 level_after = self.sensors.read_water_level()
-                diff_level = level_before - level_after
+                diff_level = round(level_before - level_after, 2)
                 # if self.ontime > CHECK_DELAY and not self.device.water_check.is_active:
                 if self.ontime > CHECK_DELAY and diff_level < WATER_LEVEL_THRESHOLD:  # 水位が設定値まで変化していない場合は循環不全と判定
                     self.logger.warning(f"Circulation failure {diff_level} detected on {pump_name}! Switching to {backup_name}.")
@@ -606,7 +606,7 @@ class HydroManager:
     def compare_last_report(self, report):
         last_report = self.db.get_latest_report()
         if (last_report['water_level'] is not None and report['water_level'] is not None and
-            last_report['water_level'] - report['water_level'] >= WATER_LEVEL_DIF_MAX):
+            last_report['water_level'] - report['water_level'] >= self.WATER_LEVEL_DIF_MAX):
             self.logger.warning(f"Water level changed significantly: {last_report['water_level']}% -> {report['water_level']}%")
             self.send_emergency_if_enabled(
                 f"【警報】水位が急激に変化しました: {last_report['water_level']}% -> {report['water_level']}%。\n"
