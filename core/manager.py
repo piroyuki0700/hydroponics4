@@ -79,10 +79,10 @@ class PumpSwitcher:
 
                 # 循環検知の確認
                 level_after = self.sensors.read_water_level()
-                diff_level = level_after - level_before
+                diff_level = level_before - level_after
                 # if self.ontime > CHECK_DELAY and not self.device.water_check.is_active:
                 if self.ontime > CHECK_DELAY and diff_level < WATER_LEVEL_THRESHOLD:  # 水位が設定値まで変化していない場合は循環不全と判定
-                    self.logger.warning(f"Circulation failure detected on {pump_name}! Switching to {backup_name}.")
+                    self.logger.warning(f"Circulation failure {diff_level} detected on {pump_name}! Switching to {backup_name}.")
                     target_pump.off()
                     backup_pump.on()
                     # Delegate emergency sending to provided callback (manager will check emergency_active)
