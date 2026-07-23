@@ -7,7 +7,7 @@ load_dotenv()
 
 class Config:
     # バージョン情報
-    APP_VERSION = '2026/07/15'
+    APP_VERSION = '2026/07/23'
     GITHUB_URL = os.getenv('GITHUB_URL', 'https://github.com/username/repository')
     GITHUB_REPO_NAME = os.getenv('GITHUB_REPO_NAME', 'repository')
 

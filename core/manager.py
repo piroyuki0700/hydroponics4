@@ -792,7 +792,7 @@ class HydroManager:
         
         # 💡 スケジュールに基づく自動補充を実行（内部で条件判定が行われます）
         # optionはデフォルト（下限を下回ったら）で動かします
-        self.cmd_subpump_refill({'trigger': 'schedule', 'option': 'default'})
+        self.cmd_subpump_refill({'trigger': 'schedule'})
 
     def _get_deactivate_status(self):
         schedule_active = self._is_schedule_active()
@@ -1243,11 +1243,11 @@ class HydroManager:
         forced_refill_active = bool(int(self.schedule.get('forced_refill_active', 0)))
         forced_refill_hour = int(self.schedule.get('forced_refill_hour', 0))
         current_hour = datetime.now().hour
-        if (trigger == 'default' and forced_refill_active and forced_refill_hour == current_hour):
+        if (trigger == 'schedule' and forced_refill_active and forced_refill_hour == current_hour):
             self.logger.info("Forced refill is active and current hour matches. Treating as forced refill.")
-            trigger = 'default_forced'
+            trigger = 'schedule_forced'
 
-        if trigger == 'manual_forced' or trigger == 'default_forced':
+        if trigger == 'manual_forced' or trigger == 'schedule_forced':
             # 'manual_forced' オプション：上限スイッチが感知（満水ではない）場合に補充
             perform_refill = not self.device.float_main_top.is_active
         else:
