@@ -1269,7 +1269,7 @@ function refreshCurrentDateReports() {
   if (currentDisplayDate !== todayStr && reportDateCacheMap[currentDisplayDate]) {
     printDebugMessage(`[Cache Hit] 過去データのため、${currentDisplayDate} をキャッシュから展開します。`);
 
-    // 💥 修正：キャッシュ展開時にも、画面上の日付テキスト表示領域を確実に更新する
+    // キャッシュ展開時にも、画面上の日付テキスト表示領域を確実に更新する
     const dateEl = $('#txt_report_date');
     if (dateEl) {
       dateEl.textContent = currentDisplayDate;
@@ -1280,18 +1280,14 @@ function refreshCurrentDateReports() {
     return;
   }
 
-  // 💥 今日であるか、キャッシュがない場合は必ずサーバーへ最新データを要求
-  if (webSocket && webSocket.connected) {
-    const logPrefix = (currentDisplayDate === todayStr) ? "[Network - Today最新]" : "[Network]";
-    printDebugMessage(`${logPrefix} ${currentDisplayDate} のグラフデータをサーバーに要求中...`);
+  // 今日であるか、キャッシュがない場合は必ずサーバーへ最新データを要求
+  const logPrefix = (currentDisplayDate === todayStr) ? "[Network - Today最新]" : "[Network]";
+  printDebugMessage(`${logPrefix} ${currentDisplayDate} のグラフデータをサーバーに要求中...`);
 
-    websocket_send({
-      command: 'get_report_by_date',
-      date: currentDisplayDate
-    });
-  } else {
-    printDebugMessage("サーバーに接続されていません。");
-  }
+  websocket_send({
+    command: 'get_report_by_date',
+    date: currentDisplayDate
+  });
 }
 
 /**

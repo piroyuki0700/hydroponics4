@@ -14,8 +14,9 @@ from core.notifier import HydroNotifier
 logger = logging.getLogger(__name__)
 
 class PumpSwitcher:
-    def __init__(self, device, logger, on_emergency=None):
+    def __init__(self, device, sensors, logger, on_emergency=None):
         self.device = device
+        self.sensors = sensors
         self.logger = logger
         # on_emergency: callable(message) provided by manager to centralize emergency checks
         self.on_emergency = on_emergency
@@ -52,6 +53,7 @@ class PumpSwitcher:
     def _loop(self):
         self.logger.info("Pump intermittent loop started (with recovery logic).")
         CHECK_DELAY = 30  # 循環判定までの待ち時間(秒)
+        WATER_LEVEL_THRESHOLD = 1.0  # 水位の上昇差がこの値未満なら循環不全と判定（％）
 
         while self.running:
             # 💡 安全対策：もしON時間が0以下の場合は、ONフェーズ自体を完全にスキップ
@@ -64,6 +66,7 @@ class PumpSwitcher:
                 backup_name = "Pump-B" if self.use_pump_a else "Pump-A"
 
                 # ON開始
+                level_before = self.sensors.read_water_level()
                 target_pump.on()
                 if self.cycle_callback:
                     self.cycle_callback('cycle_start', self.ontime)
@@ -75,7 +78,10 @@ class PumpSwitcher:
                     break
 
                 # 循環検知の確認
-                if self.ontime > CHECK_DELAY and not self.device.water_check.is_active:
+                level_after = self.sensors.read_water_level()
+                diff_level = level_after - level_before
+                # if self.ontime > CHECK_DELAY and not self.device.water_check.is_active:
+                if self.ontime > CHECK_DELAY and diff_level < WATER_LEVEL_THRESHOLD:  # 水位が設定値まで変化していない場合は循環不全と判定
                     self.logger.warning(f"Circulation failure detected on {pump_name}! Switching to {backup_name}.")
                     target_pump.off()
                     backup_pump.on()
@@ -119,6 +125,8 @@ class HydroManager:
     FLOW_LEAK_THRESHOLD = 10
     # 水開け時に予備USB出力をONにする時間（秒）
     USB_RESERVE_ON_SECONDS = 30
+    # 水位の急激な変化を検知する閾値（％）
+    WATER_LEVEL_DIF_MAX = 20.0
     
     def __init__(self, config, db, device, sensors, camera, socketio):
         self.config = config
@@ -130,7 +138,7 @@ class HydroManager:
         self.logger = logging.getLogger(__name__)
         self.notifier = HydroNotifier(config)
         # Pass manager's emergency wrapper to the switcher as a callback
-        self.switcher = PumpSwitcher(device, self.logger, on_emergency=self.send_emergency_if_enabled)
+        self.switcher = PumpSwitcher(device, sensors, self.logger, on_emergency=self.send_emergency_if_enabled)
         self.switcher.set_cycle_callback(self._pump_cycle_status)
         self.current_mode = "Unknown"
         self.leak_task = None
@@ -520,6 +528,7 @@ class HydroManager:
         self._manage_room_fan(mode, report.get('air_temp_status'))
 
         # 7. レポートデータをDBに保存
+        self.compare_last_report(report)
         report_no = self.db.insert_report(report)
         self.logger.info(f"Auto hourly Report No.{report_no} created.")
 
@@ -593,6 +602,16 @@ class HydroManager:
 
             except Exception as e:
                 self.logger.error(f"Failed during scheduled fertilizer adjustment check: {e}")
+
+    def compare_last_report(self, report):
+        last_report = self.db.get_latest_report()
+        if (last_report['water_level'] is not None and report['water_level'] is not None and
+            last_report['water_level'] - report['water_level'] >= WATER_LEVEL_DIF_MAX):
+            self.logger.warning(f"Water level changed significantly: {last_report['water_level']}% -> {report['water_level']}%")
+            self.send_emergency_if_enabled(
+                f"【警報】水位が急激に変化しました: {last_report['water_level']}% -> {report['water_level']}%。\n"
+                "配管の破損や漏水の可能性があります。至急現場を確認してください。"
+            )
 
     def _is_water_window(self):
         """現在の時刻がバルブ開放時間帯かどうかを判定するヘルパー関数"""
@@ -844,6 +863,7 @@ class HydroManager:
     def broadcast(self, event_name, data):
         """全クライアントのカスタムイベント(JS側の待ち受けイベント名)へ一斉通知"""
         try:
+            self.logger.info(f"Broadcasting event [{event_name}] to all clients. Data: {data}")
             cleaned_data = self._clean_dict(data)
             self.socketio.emit(event_name, cleaned_data)
         except Exception as e:
@@ -1516,17 +1536,21 @@ class HydroManager:
             'refill_level': self.sensors.read_water_level(),
             'water_valve': self.device.water_valve.is_active
         }
-    
-    def cmd_make_report(self, request):
-        report = self.report_main()
-        self.db.insert_report(report)
-        self.broadcast('report', report)
-        return self.make_result(True, "report created")
 
     def cmd_test_discord(self, request):
         # Use centralized wrapper so the test respects emergency_active flag
         self.send_emergency_if_enabled(f"Discord test from Hydroponics: {datetime.now().strftime('%Y/%m/%d %H:%M:%S')}")
         return self.make_result(True, "discord test sent")
+
+    def cmd_test_pumpa(self, request):
+        control = request.get('option')
+        self.device.pump_main_a.on() if control == 'on' else self.device.pump_main_a.off()
+        return self.make_result(True, f"pump_main_a:{control}")
+
+    def cmd_test_pumpb(self, request):
+        control = request.get('option')
+        self.device.pump_main_b.on() if control == 'on' else self.device.pump_main_b.off()
+        return self.make_result(True, f"pump_main_b:{control}")
 
     def cmd_test_ssr1(self, request):
         control = request.get('option')

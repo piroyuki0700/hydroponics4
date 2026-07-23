@@ -625,6 +625,10 @@
             <button onclick="ledButtonClick('white')" class="btn btn-light command_button border border-dark">white</button>
             <button onclick="ledButtonClick('none')" class="btn btn-secondary command_button">OFF</button>
           </span>
+          <span class="ms-3">
+            <span class="small">Test:</span>
+            <button onclick="debugButtonExec('test_discord')" class="btn btn-secondary command_button">Discord</button>
+          </span>
         </div>
         <div class="mt-0">
           <span>
@@ -635,20 +639,20 @@
             <button onclick="debugButtonMeasure('tds_level')" class="btn btn-secondary command_button">濃度</button>
             <button onclick="debugButtonMeasure('brightness')" class="btn btn-secondary command_button">明るさ</button>
           </span>
-          <span class="ms-3">
-            <span class="small">Test:</span>
-            <button onclick="debugButtonExec('test_discord')" class="btn btn-secondary command_button">Discord</button>
-          </span>
+          <span class="small ms-3">pumpA:</span>
+          <button onclick="debugButtonExec('test_pumpa', 'on')" class="btn btn-secondary command_button">On</button>
+          <button onclick="debugButtonExec('test_pumpa', 'off')" class="btn btn-secondary command_button">Off</button>
+          <span class="small ms-3">pumpB:</span>
+          <button onclick="debugButtonExec('test_pumpb', 'on')" class="btn btn-secondary command_button">On</button>
+          <button onclick="debugButtonExec('test_pumpb', 'off')" class="btn btn-secondary command_button">Off</button>
         </div>
         <div class="mt-0">
-          <span class="border_debug">
-            <span class="small">SSR1(sub pump):</span>
-            <button onclick="debugButtonExec('test_ssr1', 'on')" class="btn btn-secondary command_button">On</button>
-            <button onclick="debugButtonExec('test_ssr1', 'off')" class="btn btn-secondary command_button">Off</button>
-            <span class="small ms-3">SSR1(room fan):</span>
-            <button onclick="debugButtonExec('test_ssr2', 'on')" class="btn btn-secondary command_button">On</button>
-            <button onclick="debugButtonExec('test_ssr2', 'off')" class="btn btn-secondary command_button">Off</button> 
-          </span>
+          <span class="small">SSR1(sub pump):</span>
+          <button onclick="debugButtonExec('test_ssr1', 'on')" class="btn btn-secondary command_button">On</button>
+          <button onclick="debugButtonExec('test_ssr1', 'off')" class="btn btn-secondary command_button">Off</button>
+          <span class="small ms-3">SSR2(room fan):</span>
+          <button onclick="debugButtonExec('test_ssr2', 'on')" class="btn btn-secondary command_button">On</button>
+          <button onclick="debugButtonExec('test_ssr2', 'off')" class="btn btn-secondary command_button">Off</button> 
         </div>
         <div class="mt-0">
           <button onclick="clearMessageClick()" class="btn btn-light command_button border-dark">clear</button>
