@@ -205,7 +205,7 @@ class HydroDB:
         """最新3件の給水履歴を改行で連結した1本の文字列としてフロントに返す"""
         dic_array = self.getlatest('refill_record', no)
         
-        # 3件のログ文字列をリスト化。新しい履歴が下に来るよう、古い順に並べる。
+        # ログ文字列をリスト化。新しい履歴が下に来るよう、古い順に並べる。
         records_list = [self.make_refill_record_string(data) for data in reversed(dic_array)]
         
         # 💡 サーバー側で最初から改行コードで合体させる（末尾にも改行を付与）
@@ -234,13 +234,12 @@ class HydroDB:
         row = self.getone('pump_status')
         if not row:
             return {'status': 'manual_stop', 'seconds': 0}
-        end = datetime.strptime(row.get('end_time'), '%Y/%m/%d %H:%M:%S') if row.get('end_time') else None
+
         seconds = 0
-        if end:
+        if row.get('end_time'):
+            end = datetime.strptime(row.get('end_time'), '%Y/%m/%d %H:%M:%S')
             seconds = (end - datetime.now()).total_seconds()
-            if seconds < 0:
-                seconds = 0
-                row['status'] = 'error_stop'
+
         return {'status': row.get('status', 'manual_stop'), 'seconds': seconds}
 
     def insert_picture(self, data):

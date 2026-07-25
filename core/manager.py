@@ -14,6 +14,11 @@ from core.notifier import HydroNotifier
 logger = logging.getLogger(__name__)
 
 class PumpSwitcher:
+    # デフォルトON時間（秒）
+    ONTIME_DEFAULT = 300
+    # デフォルトOFF時間（秒）
+    OFFTIME_DEFAULT = 300
+
     def __init__(self, device, sensors, logger, on_emergency=None):
         self.device = device
         self.sensors = sensors
@@ -23,8 +28,8 @@ class PumpSwitcher:
         self.running = False
         self.thread = None
         self.event = threading.Event()
-        self.ontime = 300
-        self.offtime = 900
+        self.ontime = self.ONTIME_DEFAULT
+        self.offtime = self.OFFTIME_DEFAULT
         self.use_pump_a = True
         self.cycle_callback = None
 
@@ -56,47 +61,48 @@ class PumpSwitcher:
         WATER_LEVEL_THRESHOLD = 1.0  # 水位の上昇差がこの値未満なら循環不全と判定（％）
 
         while self.running:
-            # 💡 安全対策：もしON時間が0以下の場合は、ONフェーズ自体を完全にスキップ
+            # もしON時間が0以下の場合はデフォルト時間で動作
             if self.ontime <= 0:
                 self.logger.info("Pump ON time is 0. Skipping ON phase.")
+                self.ontime = self.ONTIME_DEFAULT
+
+            target_pump = self.device.pump_main_a if self.use_pump_a else self.device.pump_main_b
+            backup_pump = self.device.pump_main_b if self.use_pump_a else self.device.pump_main_a
+            pump_name = "Pump-A" if self.use_pump_a else "Pump-B"
+            backup_name = "Pump-B" if self.use_pump_a else "Pump-A"
+
+            # ON開始
+            level_before = self.sensors.read_water_level()
+            target_pump.on()
+            if self.cycle_callback:
+                self.cycle_callback('cycle_start', self.ontime)
+            self.logger.info(f"{pump_name} started. Checking circulation in {CHECK_DELAY}s...")
+
+            # 循環判定を待つ（ON時間自体が30秒未満の場合はON時間で待つ）
+            wait_check = min(CHECK_DELAY, self.ontime)
+            if self.event.wait(wait_check):
+                break
+
+            # 循環検知の確認
+            level_after = self.sensors.read_water_level()
+            diff_level = round(level_before - level_after, 2)
+            # if self.ontime > CHECK_DELAY and not self.device.water_check.is_active:
+            if self.ontime > CHECK_DELAY and diff_level < WATER_LEVEL_THRESHOLD:  # 水位が設定値まで変化していない場合は循環不全と判定
+                self.logger.warning(f"Circulation failure {diff_level} detected on {pump_name}! Switching to {backup_name}.")
+                target_pump.off()
+                backup_pump.on()
+                # Delegate emergency sending to provided callback (manager will check emergency_active)
+                if self.on_emergency:
+                    try:
+                        self.on_emergency(f"【警告】{pump_name}の循環不全。{backup_name}に切り替えました。")
+                    except Exception as e:
+                        self.logger.error(f"Failed to call on_emergency callback: {e}")
+                if self.event.wait(max(0, self.ontime - CHECK_DELAY)): break
             else:
-                target_pump = self.device.pump_main_a if self.use_pump_a else self.device.pump_main_b
-                backup_pump = self.device.pump_main_b if self.use_pump_a else self.device.pump_main_a
-                pump_name = "Pump-A" if self.use_pump_a else "Pump-B"
-                backup_name = "Pump-B" if self.use_pump_a else "Pump-A"
-
-                # ON開始
-                level_before = self.sensors.read_water_level()
-                target_pump.on()
-                if self.cycle_callback:
-                    self.cycle_callback('cycle_start', self.ontime)
-                self.logger.info(f"{pump_name} started. Checking circulation in {CHECK_DELAY}s...")
-
-                # 循環判定を待つ（ON時間自体が30秒未満の場合はON時間で待つ）
-                wait_check = min(CHECK_DELAY, self.ontime)
-                if self.event.wait(wait_check):
+                if self.ontime > CHECK_DELAY:
+                    self.logger.info(f"{pump_name} circulation confirmed.")
+                if self.event.wait(max(0, self.ontime - wait_check)):
                     break
-
-                # 循環検知の確認
-                level_after = self.sensors.read_water_level()
-                diff_level = round(level_before - level_after, 2)
-                # if self.ontime > CHECK_DELAY and not self.device.water_check.is_active:
-                if self.ontime > CHECK_DELAY and diff_level < WATER_LEVEL_THRESHOLD:  # 水位が設定値まで変化していない場合は循環不全と判定
-                    self.logger.warning(f"Circulation failure {diff_level} detected on {pump_name}! Switching to {backup_name}.")
-                    target_pump.off()
-                    backup_pump.on()
-                    # Delegate emergency sending to provided callback (manager will check emergency_active)
-                    if self.on_emergency:
-                        try:
-                            self.on_emergency(f"【警告】{pump_name}の循環不全。{backup_name}に切り替えました。")
-                        except Exception as e:
-                            self.logger.error(f"Failed to call on_emergency callback: {e}")
-                    if self.event.wait(max(0, self.ontime - CHECK_DELAY)): break
-                else:
-                    if self.ontime > CHECK_DELAY:
-                        self.logger.info(f"{pump_name} circulation confirmed.")
-                    if self.event.wait(max(0, self.ontime - wait_check)):
-                        break
 
             # すべてのポンプを一旦完全に止める
             self.device.pump_main_a.off()
