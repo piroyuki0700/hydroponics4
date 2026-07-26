@@ -79,7 +79,7 @@ else:
 # 3. 各マネージャーのインスタンス化 (Dependency Injection)
 db = HydroDB(Config)
 device = HydroDevices(Config)
-sensors = HydroSensors(Config)
+sensors = HydroSensors(Config, device)
 camera = HydroCamera(Config)
 # 司令塔 manager に SocketIO を渡し、内部から broadcast できるようにする
 manager = HydroManager(Config, db, device, sensors, camera, socketio)

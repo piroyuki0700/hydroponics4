@@ -266,8 +266,9 @@ class HydroDevices:
 # 📊 HydroSensors クラス（旧 sensors.py）
 # ==========================================
 class HydroSensors:
-    def __init__(self, config):
+    def __init__(self, config, device):
         self.config = config
+        self.device = device
         self.i2c = None
         self.ads = None
         self.bme280 = None
@@ -353,7 +354,7 @@ class HydroSensors:
                 raise ValueError("ADS1115 not initialized.")
 
             # 測定直前にTDSモジュールの電源をONにする
-            self.tds_power.on()
+            self.device.tds_power.on()
             time.sleep(1.0) # 基板の発振回路が安定するまで1秒待つ
 
             chan = AnalogIn(self.ads, self.config.CH_TDS_METER)
@@ -367,7 +368,7 @@ class HydroSensors:
         finally:
             # エラーが起きても正常でも、最後は必ず電源を切って電気分解を止める
             if IS_HARDWARE_OK:
-                self.tds_power.off()
+                self.device.tds_power.off()
 
         temp_compensated = 1.0 + 0.02 * (water_temp - 25.0)
         v_compensated = v_raw / temp_compensated
