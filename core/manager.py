@@ -126,7 +126,7 @@ class PumpSwitcher:
 
 class HydroManager:
     # 水の補充前の水位確認回数
-    REFILL_CONFIRM_COUNT = 3
+    REFILL_CONFIRM_COUNT = 5
     # バルブ閉期間中の異常流水判定パルス数
     FLOW_LEAK_THRESHOLD = 10
     # 水開け時に予備USB出力をONにする時間（秒）

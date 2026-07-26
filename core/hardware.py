@@ -151,6 +151,9 @@ class HydroDevices:
             self.water_valve = OutputDevice(config.PIN_WATER_VALVE)
             self.cooling_fan = PWMOutputDevice(config.PIN_COOLING_FAN)
 
+            PIN_TDS_POWER = 14 # 💡 TDSモジュール電源用GPIO
+            self.tds_power = OutputDevice(PIN_TDS_POWER)  # 💡 TDSモジュール電源用GPIO
+
             # --- 入力ボタン (Button) ---
             self.leak_detect = Button(config.PIN_LEAK_DETECT, **input_ok_true)
             self.water_check = Button(config.PIN_WATER_CHECK, **input_ok_true)
@@ -348,6 +351,10 @@ class HydroSensors:
             if not self.ads:
                 raise ValueError("ADS1115 not initialized.")
 
+            # 測定直前にTDSモジュールの電源をONにする
+            self.tds_power.on()
+            time.sleep(1.0) # 基板の発振回路が安定するまで1秒待つ
+
             chan = AnalogIn(self.ads, self.config.CH_TDS_METER)
             v_raw = chan.voltage
             logger.debug(f"Raw TDS voltage: {v_raw:.3f} V, Water Temp: {water_temp:.1f} °C")
@@ -355,6 +362,11 @@ class HydroSensors:
         except Exception as e:
             logger.error(f"EC sensor read error: {e}")
             return None, None
+
+        finally:
+            # エラーが起きても正常でも、最後は必ず電源を切って電気分解を止める
+            if IS_HARDWARE_OK:
+                self.tds_power.off()
 
         temp_compensated = 1.0 + 0.02 * (water_temp - 25.0)
         v_compensated = v_raw / temp_compensated
