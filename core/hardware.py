@@ -125,6 +125,8 @@ class HydroDevices:
         self.fert_pump_4 = DummyOutputDevice(config.PIN_FERT_PUMP_4)
         self.water_valve = DummyOutputDevice(config.PIN_WATER_VALVE)
         self.cooling_fan = DummyPWMOutputDevice(config.PIN_COOLING_FAN)
+        PIN_TDS_POWER = 14 # 💡 TDSモジュール電源用GPIO
+        self.tds_power = DummyOutputDevice(PIN_TDS_POWER)
 
         self.leak_detect = DummyButton(config.PIN_LEAK_DETECT)
         self.water_check = DummyButton(config.PIN_WATER_CHECK)
@@ -151,7 +153,6 @@ class HydroDevices:
             self.water_valve = OutputDevice(config.PIN_WATER_VALVE)
             self.cooling_fan = PWMOutputDevice(config.PIN_COOLING_FAN)
 
-            PIN_TDS_POWER = 14 # 💡 TDSモジュール電源用GPIO
             self.tds_power = OutputDevice(PIN_TDS_POWER)  # 💡 TDSモジュール電源用GPIO
 
             # --- 入力ボタン (Button) ---
