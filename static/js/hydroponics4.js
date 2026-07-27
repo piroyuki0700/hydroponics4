@@ -1347,6 +1347,8 @@ function updateDateButtonsState() {
  * グラフ描画コア関数（0:00〜23:00固定枠 ＆ アラート背景バグ修正 ＆ 1行統計連動版）
  */
 function initOrUpdateChart() {
+  const MAX_INTERPOLATE_GAPS = 2;
+
   const ctx = $('#reportChart');
   if (!ctx) return;
 
@@ -1401,6 +1403,54 @@ function initOrUpdateChart() {
     }
   }
 
+  // 最大Nコマ（N時間）のデータ欠損を補間するロジック
+  // ※ 各データセットを組み立てる前に、fixedReports24 の中身を書き換えます
+  Object.keys(TARGET_FIELDS).forEach(field => {
+    for (let i = 0; i < 24; i++) {
+      // 現在のコマが空（nullまたはundefined）の場合N
+      if (fixedReports24[i][field] === null || fixedReports24[i][field] === undefined) {
+
+        // ① 直前の有効なデータ（左側）を探す
+        let leftIdx = -1;
+        for (let l = i - 1; l >= 0; l--) {
+          if (fixedReports24[l][field] !== null && fixedReports24[l][field] !== undefined) {
+            leftIdx = l;
+            break;
+          }
+        }
+
+        // ② 直後の有効なデータ（右側）を探す
+        let rightIdx = -1;
+        for (let r = i + 1; r < 24; r++) {
+          if (fixedReports24[r][field] !== null && fixedReports24[r][field] !== undefined) {
+            rightIdx = r;
+            break;
+          }
+        }
+
+        // ③ 両側にデータが見つかり、かつその隙間（欠損期間）が「2マス以内」の場合のみ埋める
+        if (leftIdx !== -1 && rightIdx !== -1) {
+          const gapSize = rightIdx - leftIdx - 1; // 挟まれている空欄の数
+
+          if (gapSize <= MAX_INTERPOLATE_GAPS) { // MAXマス以内なら補間する
+            const leftVal = fixedReports24[leftIdx][field];
+            const rightVal = fixedReports24[rightIdx][field];
+
+            // 線形補間（前後の値から、その時間の値を均等に配分して計算する）
+            const interpolatedValue = leftVal + (rightVal - leftVal) * ((i - leftIdx) / (rightIdx - leftIdx));
+
+            // 補間した数値を格納する（ツールチップで「補間値」だと分かるようフラグを立てることも可能）
+            fixedReports24[i][field] = interpolatedValue;
+
+            // 💡 任意：ツールチップ表示用に「補間データ」であることを記録したい場合は以下を有効に
+            if (!fixedReports24[i]._isInterpolated) fixedReports24[i]._isInterpolated = {};
+            fixedReports24[i]._isInterpolated[field] = true;
+          }
+        }
+      }
+    }
+  });
+
   // 横書き1行の枠内に最高・最低気温を確実に書き込む
   const maxEl = $('#stat_max_temp');
   const minEl = $('#stat_min_temp');
@@ -1412,7 +1462,7 @@ function initOrUpdateChart() {
     if (minEl) minEl.textContent = `--.- ℃`;
   }
 
-  // データセットの組み立て
+  // 各データセットの組み立て（点線つなぎ ＆ 補間ドット専用デザイン版）
   const datasets = Object.keys(TARGET_FIELDS).map(field => {
     const config = TARGET_FIELDS[field];
     const mm = minMaxMap[field];
@@ -1422,23 +1472,31 @@ function initOrUpdateChart() {
       return ((v - mm.min) / (mm.max - mm.min)) * 100;
     });
 
-    // 💡 拡張：データごとにドットの「形状」と「大きさ」を変える配列を作成
     const pointStyles = [];
     const pointRadii = [];
+    const pointBgColors = []; // 💡 ドットの内側の色を動的に変える配列
     const statusArray = [];
 
-    fixedReports24.forEach(r => {
+    fixedReports24.forEach((r, idx) => {
       const itemStatus = r[`${field}_status`] || 'success';
       statusArray.push(itemStatus);
 
-      if (itemStatus === 'danger') {
-        // 💥 危険時は「バツ印（crossRot）」にしてサイズを大きく
-        pointStyles.push('crossRot');
-        pointRadii.push(6);
-      } else if (itemStatus === 'warning') {
-        // ⚠️ 警告時は「三角形（triangle）」にしてサイズをやや大きく
-        pointStyles.push('triangle');
+      // 💡 拡張：このコマが「プログラムで自動補間されたデータ」かどうかを判定
+      const isInterpolated = (r._isInterpolated && r._isInterpolated[field]);
+
+      if (isInterpolated) {
+        // 💥 飛んだ点（補間値）は「中抜きの白い丸」にしてサイズを5pxにする
+        pointStyles.push('circle');
         pointRadii.push(4);
+        pointBgColors.push('#ffffff'); // 中を白（背景と同色）にしてドーナツ型に見せる
+      } else if (itemStatus === 'danger') {
+        pointStyles.push('crossRot'); 
+        pointRadii.push(6); // サイズ微調整済みの値を適用
+        pointBgColors.push(config.color);
+      } else if (itemStatus === 'warning') {
+        pointStyles.push('triangle');
+        pointRadii.push(4); // サイズ微調整済みの値を適用
+        pointBgColors.push(config.color);
       } else {
         // 正常時は丸形(circle)でサイズを小さく
         pointStyles.push('circle');
@@ -1455,17 +1513,33 @@ function initOrUpdateChart() {
       data: normalizedValues,
       rawValues: rawValues,
 
-      // 💡 形状(Style)と大きさ(Radius)に、作成した動的配列を指定
       pointStyle: pointStyles,
       pointRadius: pointRadii,
-      pointHoverRadius: 7, // マウスホバー時はしっかり強調
+      pointHoverRadius: 9,
+      pointBackgroundColor: pointBgColors, // 💡 動的な色（白抜き用）を設定
+      pointBorderColor: config.color,       // 枠線は本来の項目カラーのまま
+      pointBorderWidth: 2,
 
-      // 💡 色は項目ごとに設定されている本来の色をそのまま適用（固定）
-      pointBackgroundColor: config.color,
-      pointBorderColor: config.color,
-      pointBorderWidth: 2, // バツ印などの線幅を太くして見やすくする
+      itemStatuses: statusArray,
 
-      itemStatuses: statusArray
+      // 💥【新設】線の一部を「点線（破線）」に化けさせるセグメント制御
+      // Chart.jsが1マスずつ線を引く直前に、この関数が自動で呼び出されます
+      segment: {
+        borderDash: (ctx) => {
+          // ctx.p0 が線の始点、ctx.p1 が線の終点
+          const r0 = fixedReports24[ctx.p0.dataIndex];
+          const r1 = fixedReports24[ctx.p1.dataIndex];
+
+          // 始点または終点のどちらかが「補間されたデータ」なら、その間を [6, 4] の点線にする
+          const p0Interpolated = (r0._isInterpolated && r0._isInterpolated[field]);
+          const p1Interpolated = (r1._isInterpolated && r1._isInterpolated[field]);
+
+          if (p0Interpolated || p1Interpolated) {
+            return; // 6px引いて4px空ける点線（破線）
+          }
+          return undefined; // 通常時は実線
+        }
+      }
     };
   });
 
@@ -1493,11 +1567,23 @@ function initOrUpdateChart() {
               const datasetLabel = context.dataset.label;
               const dIdx = context.datasetIndex;
               const rIdx = context.dataIndex;
+
               const rawData = reportChartInstance.data.datasets[dIdx].rawValues[rIdx];
               const fieldKey = Object.keys(TARGET_FIELDS).find(k => TARGET_FIELDS[k].label === datasetLabel);
               const unit = fieldKey ? TARGET_FIELDS[fieldKey].unit : '';
+
               if (rawData === null || rawData === undefined) return `${datasetLabel}: データなし`;
-              return `${datasetLabel}: ${rawData} ${unit}`;
+
+              // 💡 補間フラグがあるかチェック
+              const isInterpolated = (fixedReports24[rIdx]._isInterpolated && fixedReports24[rIdx]._isInterpolated[fieldKey]);
+              const suffix = isInterpolated ? " (※自動補間)" : "";
+
+              const itemStatus = context.dataset.itemStatuses[rIdx];
+              let prefix = "";
+              if (itemStatus === 'danger') prefix = "🚨[危険] ";
+              if (itemStatus === 'warning') prefix = "⚠️[警告] ";
+
+              return `${prefix}${datasetLabel}: ${rawData.toFixed(1)}${unit}${suffix}`;
             }
           },
           titleFont: { size: 15, weight: 'bold' },
