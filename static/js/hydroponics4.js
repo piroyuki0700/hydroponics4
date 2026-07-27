@@ -1392,58 +1392,55 @@ function initOrUpdateChart() {
     const found = rawReportsCache.find(r => r.display_time && r.display_time.startsWith(`${hourStr}:`));
 
     if (found) {
-      fixedReports24.push(found);
+      fixedReports24.push(Object.assign({ _isInterpolated: {} }, found));
       statusTimeline.push(found.total_status || 'success');
       if (found.air_temp !== null && found.air_temp !== undefined) {
         validAirTemps.push(found.air_temp);
       }
     } else {
-      fixedReports24.push({});
+      const emptyReport = { total_status: 'success', _isInterpolated: {} };
+      Object.keys(TARGET_FIELDS).forEach(field => {
+        emptyReport[field] = null;
+      });
+      fixedReports24.push(emptyReport);
       statusTimeline.push('success');
     }
   }
 
   // 最大Nコマ（N時間）のデータ欠損を補間するロジック
-  // ※ 各データセットを組み立てる前に、fixedReports24 の中身を書き換えます
   Object.keys(TARGET_FIELDS).forEach(field => {
     for (let i = 0; i < 24; i++) {
-      // 現在のコマが空（nullまたはundefined）の場合N
       if (fixedReports24[i][field] === null || fixedReports24[i][field] === undefined) {
 
-        // ① 直前の有効なデータ（左側）を探す
+        // ① 直前の有効なデータを探す
         let leftIdx = -1;
         for (let l = i - 1; l >= 0; l--) {
-          if (fixedReports24[l][field] !== null && fixedReports24[l][field] !== undefined) {
+          if (fixedReports24[l][field] !== null && fixedReports24[l][field] !== undefined && !fixedReports24[l]._isInterpolated?.[field]) {
             leftIdx = l;
             break;
           }
         }
 
-        // ② 直後の有効なデータ（右側）を探す
+        // ② 直後の有効なデータを探す
         let rightIdx = -1;
         for (let r = i + 1; r < 24; r++) {
-          if (fixedReports24[r][field] !== null && fixedReports24[r][field] !== undefined) {
+          if (fixedReports24[r][field] !== null && fixedReports24[r][field] !== undefined && !fixedReports24[r]._isInterpolated?.[field]) {
             rightIdx = r;
             break;
           }
         }
 
-        // ③ 両側にデータが見つかり、かつその隙間（欠損期間）が「2マス以内」の場合のみ埋める
+        // ③ 両側にデータが見つかり、隙間が指定数以内の場合のみ埋める
         if (leftIdx !== -1 && rightIdx !== -1) {
-          const gapSize = rightIdx - leftIdx - 1; // 挟まれている空欄の数
+          const gapSize = rightIdx - leftIdx - 1;
 
-          if (gapSize <= MAX_INTERPOLATE_GAPS) { // MAXマス以内なら補間する
+          if (gapSize <= MAX_INTERPOLATE_GAPS) {
             const leftVal = fixedReports24[leftIdx][field];
             const rightVal = fixedReports24[rightIdx][field];
 
-            // 線形補間（前後の値から、その時間の値を均等に配分して計算する）
+            // 線形補間
             const interpolatedValue = leftVal + (rightVal - leftVal) * ((i - leftIdx) / (rightIdx - leftIdx));
-
-            // 補間した数値を格納する（ツールチップで「補間値」だと分かるようフラグを立てることも可能）
             fixedReports24[i][field] = interpolatedValue;
-
-            // 💡 任意：ツールチップ表示用に「補間データ」であることを記録したい場合は以下を有効に
-            if (!fixedReports24[i]._isInterpolated) fixedReports24[i]._isInterpolated = {};
             fixedReports24[i]._isInterpolated[field] = true;
           }
         }
@@ -1462,11 +1459,11 @@ function initOrUpdateChart() {
     if (minEl) minEl.textContent = `--.- ℃`;
   }
 
-  // 各データセットの組み立て（点線つなぎ ＆ 補間ドット専用デザイン版）
+  // 各データセットの組み立て
   const datasets = Object.keys(TARGET_FIELDS).map(field => {
     const config = TARGET_FIELDS[field];
     const mm = minMaxMap[field];
-    const rawValues = fixedReports24.map(r => (r[field] === null || r[field] === undefined) ? null : r[field]);
+    const rawValues = fixedReports24.map(r => r[field]);
     const normalizedValues = rawValues.map(v => {
       if (v === null || v === undefined) return null;
       return ((v - mm.min) / (mm.max - mm.min)) * 100;
@@ -1474,33 +1471,31 @@ function initOrUpdateChart() {
 
     const pointStyles = [];
     const pointRadii = [];
-    const pointBgColors = []; // 💡 ドットの内側の色を動的に変える配列
+    const pointBgColors = []; 
     const statusArray = [];
 
-    fixedReports24.forEach((r, idx) => {
+    fixedReports24.forEach((r) => {
       const itemStatus = r[`${field}_status`] || 'success';
       statusArray.push(itemStatus);
 
-      // 💡 拡張：このコマが「プログラムで自動補間されたデータ」かどうかを判定
-      const isInterpolated = (r._isInterpolated && r._isInterpolated[field]);
+      const isInterpolated = r._isInterpolated?.[field];
 
       if (isInterpolated) {
-        // 💥 飛んだ点（補間値）は「中抜きの白い丸」にしてサイズを5pxにする
         pointStyles.push('circle');
-        pointRadii.push(4);
-        pointBgColors.push('#ffffff'); // 中を白（背景と同色）にしてドーナツ型に見せる
+        pointRadii.push(0);
+        pointBgColors.push(config.color); 
       } else if (itemStatus === 'danger') {
         pointStyles.push('crossRot'); 
-        pointRadii.push(6); // サイズ微調整済みの値を適用
+        pointRadii.push(6); 
         pointBgColors.push(config.color);
       } else if (itemStatus === 'warning') {
         pointStyles.push('triangle');
-        pointRadii.push(4); // サイズ微調整済みの値を適用
+        pointRadii.push(4); 
         pointBgColors.push(config.color);
       } else {
-        // 正常時は丸形(circle)でサイズを小さく
         pointStyles.push('circle');
         pointRadii.push(2);
+        pointBgColors.push(config.color); 
       }
     });
 
@@ -1516,28 +1511,32 @@ function initOrUpdateChart() {
       pointStyle: pointStyles,
       pointRadius: pointRadii,
       pointHoverRadius: 9,
-      pointBackgroundColor: pointBgColors, // 💡 動的な色（白抜き用）を設定
-      pointBorderColor: config.color,       // 枠線は本来の項目カラーのまま
+      pointBackgroundColor: pointBgColors,
+      pointBorderColor: config.color,
       pointBorderWidth: 2,
 
       itemStatuses: statusArray,
 
-      // 💥【新設】線の一部を「点線（破線）」に化けさせるセグメント制御
-      // Chart.jsが1マスずつ線を引く直前に、この関数が自動で呼び出されます
+      // [6, 4] 配列を明示的に返して、確実に点線（破線）にする制御
+      itemStatuses: statusArray,
+
+      // 💥 修正：文字や空欄ではなく、[3, 3] という数値配列を直接返却します
       segment: {
         borderDash: (ctx) => {
-          // ctx.p0 が線の始点、ctx.p1 が線の終点
-          const r0 = fixedReports24[ctx.p0.dataIndex];
-          const r1 = fixedReports24[ctx.p1.dataIndex];
+          const idx0 = ctx.p0.$context ? ctx.p0.$context.dataIndex : ctx.p0.index;
+          const idx1 = ctx.p1.$context ? ctx.p1.$context.dataIndex : ctx.p1.index;
 
-          // 始点または終点のどちらかが「補間されたデータ」なら、その間を [6, 4] の点線にする
-          const p0Interpolated = (r0._isInterpolated && r0._isInterpolated[field]);
-          const p1Interpolated = (r1._isInterpolated && r1._isInterpolated[field]);
+          const r0 = fixedReports24[idx0];
+          const r1 = fixedReports24[idx1];
 
+          const p0Interpolated = r0?._isInterpolated?.[field];
+          const p1Interpolated = r1?._isInterpolated?.[field];
+
+          // 始点か終点どちらかが補間値なら、3px描いて3px空ける細かい点線にする
           if (p0Interpolated || p1Interpolated) {
-            return; // 6px引いて4px空ける点線（破線）
+            return [3, 3]; // [3, 3] 配列を直接返す
           }
-          return undefined; // 通常時は実線
+          return undefined; // 通常データ間は実線
         }
       }
     };
@@ -1574,8 +1573,7 @@ function initOrUpdateChart() {
 
               if (rawData === null || rawData === undefined) return `${datasetLabel}: データなし`;
 
-              // 💡 補間フラグがあるかチェック
-              const isInterpolated = (fixedReports24[rIdx]._isInterpolated && fixedReports24[rIdx]._isInterpolated[fieldKey]);
+              const isInterpolated = fixedReports24[rIdx]?._isInterpolated?.[fieldKey];
               const suffix = isInterpolated ? " (※自動補間)" : "";
 
               const itemStatus = context.dataset.itemStatuses[rIdx];
@@ -1591,7 +1589,6 @@ function initOrUpdateChart() {
         }
       }
     },
-    // 💡 修正：イベントを beforeDatasetsDraw に変更して上書きを完全防御
     plugins: [{
       id: 'alertBackground',
       beforeDatasetsDraw: (chart) => {
@@ -1603,7 +1600,6 @@ function initOrUpdateChart() {
         for (let i = 0; i < count; i++) {
           const status = statusTimeline[i];
           if (status === 'danger' || status === 'warning') {
-            // 色が濃すぎると線が見づらくなるため絶妙な透明度(0.08 / 0.12)に調整しています
             ctx.fillStyle = (status === 'danger') ? 'rgba(255, 0, 0, 0.08)' : 'rgba(255, 215, 0, 0.12)';
             const left = chartArea.left + (i - 0.5) * columnWidth;
             const drawLeft = Math.max(left, chartArea.left);
