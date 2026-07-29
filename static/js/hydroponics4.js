@@ -213,10 +213,8 @@ function websocketConnect()
     }
   });
 
-  // 過去24時間データ受信イベント（カレンダー移動・統計パネル・アラート背景連動版）
+  // 過去24時間データ受信イベント
   webSocket.on('response_past_24h', (data) => {
-    console.log("【デバッグ】サーバーからの受信データ:", data);
-
     if (data && data.past_reports && Array.isArray(data.past_reports)) {
 
       const resDate = data.target_date || "";
@@ -226,7 +224,6 @@ function websocketConnect()
       const dateEl = $('#txt_report_date');
       if (dateEl) dateEl.textContent = resDate;
 
-      // 受信したデータを安全に数値化キャスト
       const formattedReports = data.past_reports.map(r => {
         const copy = Object.assign({}, r);
         [
@@ -241,32 +238,30 @@ function websocketConnect()
         return copy;
       });
 
-      // 💥 3. 取得したデータをカレンダーキャッシュに記憶
-      reportDateCacheMap[resDate] = formattedReports;
+      // 取得したデータをカレンダーキャッシュに記憶
+      // 給水データも一緒にキャッシュマップに保存する
+      reportDateCacheMap[resDate] = {
+        reports: formattedReports,
+        refills: data.refill_records || [] // 給水アレイもキャッシュに同梱
+      };
 
-      // 💥 4. キャッシュが容量オーバー（5日分超）したら古い日付のキーを削除してメモリを節約
+      // キャッシュが容量オーバー（5日分超）したら古い日付のキーを削除してメモリを節約
       const cacheKeys = Object.keys(reportDateCacheMap);
       if (cacheKeys.length > MAX_CACHE_DAYS) {
         const oldestKey = cacheKeys[0]; // 最初に入った古いキー
         delete reportDateCacheMap[oldestKey];
-        printDebugMessage(`[Cache Clean] メモリ節約のため、古いキャッシュ(${oldestKey})を削除しました。`);
+        printDebugMessage(`[Cache Clean] 古いキャッシュ(${oldestKey})を削除しました。`);
       }
 
-      // グローバル配列に格納して描画へ
+      // グラフ描画へ渡すグローバル変数の展開
       rawReportsCache = formattedReports;
       initOrUpdateChart();
 
     } else {
       printDebugMessage("グラフデータの取得に失敗したか、データが空です。");
     }
-    updateDateButtonsState();
+    updateDateButtonsState()
   });
-
-  // // 結果ポップアップ通知
-  // webSocket.on('result', (data) => {
-  //   printDebugMessage(data['datetime'] + ': ' + data['result'] + ' - ' + data['message']);
-  //   if (data['show_popup']) showModalResult(data);
-  // });
 }
 
 function websocket_open()
@@ -1275,7 +1270,7 @@ function refreshCurrentDateReports() {
       dateEl.textContent = currentDisplayDate;
     }
 
-    rawReportsCache = reportDateCacheMap[currentDisplayDate];
+    rawReportsCache = reportDateCacheMap[currentDisplayDate].reports;
     initOrUpdateChart();
     return;
   }
@@ -1459,87 +1454,205 @@ function initOrUpdateChart() {
     if (minEl) minEl.textContent = `--.- ℃`;
   }
 
-  // 各データセットの組み立て
+  // 各データセットの組み立て（水位専用の不定期ブレンド対応版）
   const datasets = Object.keys(TARGET_FIELDS).map(field => {
     const config = TARGET_FIELDS[field];
     const mm = minMaxMap[field];
-    const rawValues = fixedReports24.map(r => r[field]);
-    const normalizedValues = rawValues.map(v => {
-      if (v === null || v === undefined) return null;
-      return ((v - mm.min) / (mm.max - mm.min)) * 100;
-    });
 
-    const pointStyles = [];
-    const pointRadii = [];
-    const pointBgColors = []; 
-    const statusArray = [];
+    // 現在の日付に対応する給水データをキャッシュマップから安全に取得
+    const currentRefillLogs = reportDateCacheMap[currentDisplayDate]?.refills || [];
 
-    fixedReports24.forEach((r) => {
-      const itemStatus = r[`${field}_status`] || 'success';
-      statusArray.push(itemStatus);
+    // 水位（water_level）の場合のみ、インデックス（0〜23）をベースにした小数点座標を合成する
+    // 💥 修正：水位（water_level）の場合のみ、小数点の数値X座標を持つ特殊オブジェクトアレイを合成する
+    if (field === 'water_level') {
+      let mixedTimeline = [];
 
-      const isInterpolated = r._isInterpolated?.[field];
-
-      if (isInterpolated) {
-        pointStyles.push('circle');
-        pointRadii.push(0);
-        pointBgColors.push(config.color); 
-      } else if (itemStatus === 'danger') {
-        pointStyles.push('crossRot'); 
-        pointRadii.push(6); 
-        pointBgColors.push(config.color);
-      } else if (itemStatus === 'warning') {
-        pointStyles.push('triangle');
-        pointRadii.push(4); 
-        pointBgColors.push(config.color);
-      } else {
-        pointStyles.push('circle');
-        pointRadii.push(2);
-        pointBgColors.push(config.color); 
-      }
-    });
-
-    return {
-      label: config.label,
-      borderColor: config.color,
-      backgroundColor: config.color,
-      tension: 0,
-      hidden: !config.defaultShow,
-      data: normalizedValues,
-      rawValues: rawValues,
-
-      pointStyle: pointStyles,
-      pointRadius: pointRadii,
-      pointHoverRadius: 9,
-      pointBackgroundColor: pointBgColors,
-      pointBorderColor: config.color,
-      pointBorderWidth: 2,
-
-      itemStatuses: statusArray,
-
-      // [6, 4] 配列を明示的に返して、確実に点線（破線）にする制御
-      itemStatuses: statusArray,
-
-      // 💥 修正：文字や空欄ではなく、[3, 3] という数値配列を直接返却します
-      segment: {
-        borderDash: (ctx) => {
-          const idx0 = ctx.p0.$context ? ctx.p0.$context.dataIndex : ctx.p0.index;
-          const idx1 = ctx.p1.$context ? ctx.p1.$context.dataIndex : ctx.p1.index;
-
-          const r0 = fixedReports24[idx0];
-          const r1 = fixedReports24[idx1];
-
-          const p0Interpolated = r0?._isInterpolated?.[field];
-          const p1Interpolated = r1?._isInterpolated?.[field];
-
-          // 始点か終点どちらかが補間値なら、3px描いて3px空ける細かい点線にする
-          if (p0Interpolated || p1Interpolated) {
-            return [3, 3]; // [3, 3] 配列を直接返す
-          }
-          return undefined; // 通常データ間は実線
+      // 1. 定期レポート24コマ分の水位を、目盛り位置（0.0 〜 23.0）の数値座標としてプッシュ
+      fixedReports24.forEach((r, idx) => {
+        if (r[field] !== null && r[field] !== undefined) {
+          const normalized = ((r[field] - mm.min) / (mm.max - mm.min)) * 100;
+          mixedTimeline.push({
+            x: parseFloat(idx), // 💡 0.0, 1.0, 2.0 という「時間の数値」そのものをXにする
+            displayTime: `${String(idx).padStart(2, '0')}:00`,
+            y: normalized,
+            rawValue: r[field],
+            status: r[`${field}_status`] || 'success',
+            isInterpolated: !!r._isInterpolated?.[field],
+            refillType: 'none'
+          });
         }
-      }
-    };
+      });
+
+      // 2. その日の給水ログ（before/after）を割り込ませる
+      const currentRefillLogs = reportDateCacheMap[currentDisplayDate]?.refills || [];
+      currentRefillLogs.forEach(log => {
+        if (log.time_before && log.time_before.includes(':') && log.level_before !== null && log.level_before !== undefined) {
+          const parts = log.time_before.split(':');
+          const xPos = parseInt(parts[0], 10) + (parseInt(parts[1], 10) / 60);
+          const yPos = ((log.level_before - mm.min) / (mm.max - mm.min)) * 100;
+          mixedTimeline.push({
+            x: xPos, displayTime: log.time_before, y: yPos, rawValue: log.level_before,
+            status: 'success', isInterpolated: false, refillType: 'before'
+          });
+        }
+        if (log.time_after && log.time_after.includes(':') && log.level_after !== null && log.level_after !== undefined) {
+          const parts = log.time_after.split(':');
+          const xPos = parseInt(parts[0], 10) + (parseInt(parts[1], 10) / 60);
+          const yPos = ((log.level_after - mm.min) / (mm.max - mm.min)) * 100;
+          mixedTimeline.push({
+            x: xPos, displayTime: log.time_after, y: yPos, rawValue: log.level_after,
+            status: 'success', isInterpolated: false, refillType: 'after'
+          });
+        }
+      });
+
+      // 3. 時間順に正確に並び替え
+      mixedTimeline.sort((a, b) => a.x - b.x);
+
+      // 4. 各パーツの組み立て
+      const pointStyles = [];
+      const pointRadii = [];
+      const pointBgColors = [];
+      const statusArray = [];
+      const finalRawValues = [];
+      const chartDataPoints = [];
+      const isInterpolatedArray = [];
+      const displayTimesArray = [];
+      const refillTypesArray = []; // 💡 給水種別をストック
+
+      mixedTimeline.forEach(pt => {
+        chartDataPoints.push({ x: pt.x, y: pt.y }); // 💥 [{x: 16.066, y: 15.3}, ...] のオブジェクト形式
+        statusArray.push(pt.status);
+        finalRawValues.push(pt.rawValue);
+        isInterpolatedArray.push(pt.isInterpolated);
+        displayTimesArray.push(pt.displayTime);
+        refillTypesArray.push(pt.refillType);
+
+        if (pt.refillType === 'before') {
+          pointStyles.push('rect'); pointRadii.push(5); pointBgColors.push('#ffffff');
+        } else if (pt.refillType === 'after') {
+          pointStyles.push('rect'); pointRadii.push(5); pointBgColors.push(config.color);
+        } else if (pt.isInterpolated) {
+          pointStyles.push('circle'); pointRadii.push(0); pointBgColors.push(config.color);
+        } else if (pt.status === 'danger') {
+          pointStyles.push('crossRot'); pointRadii.push(6); pointBgColors.push(config.color);
+        } else if (pt.status === 'warning') {
+          pointStyles.push('triangle'); pointRadii.push(4); pointBgColors.push(config.color);
+        } else {
+          pointStyles.push('circle'); pointRadii.push(2); pointBgColors.push(config.color);
+        }
+      });
+
+      return {
+        label: config.label,
+        xAxisID: 'x_time', // 💥重要：水位だけは、新設する「数値用のx_time軸」に紐付ける！
+        borderColor: config.color,
+        backgroundColor: config.color,
+        tension: 0,
+        hidden: !config.defaultShow,
+        data: chartDataPoints,
+        rawValues: finalRawValues,
+        pointStyle: pointStyles,
+        pointRadius: pointRadii,
+        pointHoverRadius: 10,
+        pointBackgroundColor: pointBgColors,
+        pointBorderColor: config.color,
+        pointBorderWidth: 2,
+        itemStatuses: statusArray,
+        isInterpolatedArray: isInterpolatedArray,
+        displayTimesArray: displayTimesArray,
+        refillTypes: refillTypesArray,
+
+        segment: {
+          borderDash: (ctx) => {
+            const idx0 = ctx.p0.$context ? ctx.p0.$context.dataIndex : ctx.p0.index;
+            const idx1 = ctx.p1.$context ? ctx.p1.$context.dataIndex : ctx.p1.index;
+
+            const r0 = fixedReports24[idx0];
+            const r1 = fixedReports24[idx1];
+
+            const p0Interpolated = r0?._isInterpolated?.[field];
+            const p1Interpolated = r1?._isInterpolated?.[field];
+
+            // 始点か終点どちらかが補間値なら、3px描いて3px空ける細かい点線にする
+            if (p0Interpolated || p1Interpolated) {
+              return [3, 3]; // [3, 3] 配列を直接返す
+            }
+            return undefined; // 通常データ間は実線
+          }
+        },
+        spanGaps: false
+      };
+    }
+
+    // 💡 水位以外のその他すべてのセンサー（気温、湿度など）は「以前の正常動作コード」をそのまま100%維持
+    else {
+      const rawValues = fixedReports24.map(r => r[field]);
+      const normalizedValues = rawValues.map(v => {
+        if (v === null || v === undefined) return null;
+        return ((v - mm.min) / (mm.max - mm.min)) * 100;
+      });
+
+      const pointStyles = [];
+      const pointRadii = [];
+      const pointBgColors = [];
+      const statusArray = [];
+
+      fixedReports24.forEach((r) => {
+        const itemStatus = r[`${field}_status`] || 'success';
+        statusArray.push(itemStatus);
+        const isInterpolated = r._isInterpolated?.[field];
+
+        if (isInterpolated) {
+          pointStyles.push('circle'); pointRadii.push(0); pointBgColors.push(config.color);
+        } else if (itemStatus === 'danger') {
+          pointStyles.push('crossRot'); pointRadii.push(6); pointBgColors.push(config.color);
+        } else if (itemStatus === 'warning') {
+          pointStyles.push('triangle'); pointRadii.push(4); pointBgColors.push(config.color);
+        } else {
+          pointStyles.push('circle'); pointRadii.push(2); pointBgColors.push(config.color);
+        }
+      });
+
+      return {
+        label: config.label,
+        borderColor: config.color,
+        backgroundColor: config.color,
+        tension: 0,
+        hidden: !config.defaultShow,
+        data: normalizedValues,
+        rawValues: rawValues,
+
+        pointStyle: pointStyles,
+        pointRadius: pointRadii,
+        pointHoverRadius: 9,
+        pointBackgroundColor: pointBgColors,
+        pointBorderColor: config.color,
+        pointBorderWidth: 2,
+
+        itemStatuses: statusArray,
+
+        // 文字や空欄ではなく、[3, 3] という数値配列を直接返却します
+        segment: {
+          borderDash: (ctx) => {
+            const idx0 = ctx.p0.$context ? ctx.p0.$context.dataIndex : ctx.p0.index;
+            const idx1 = ctx.p1.$context ? ctx.p1.$context.dataIndex : ctx.p1.index;
+
+            const r0 = fixedReports24[idx0];
+            const r1 = fixedReports24[idx1];
+
+            const p0Interpolated = r0?._isInterpolated?.[field];
+            const p1Interpolated = r1?._isInterpolated?.[field];
+
+            // 始点か終点どちらかが補間値なら、3px描いて3px空ける細かい点線にする
+            if (p0Interpolated || p1Interpolated) {
+              return [3, 3]; // [3, 3] 配列を直接返す
+            }
+            return undefined; // 通常データ間は実線
+          }
+        }
+      };
+    }
   });
 
   if (reportChartInstance) {
@@ -1555,33 +1668,81 @@ function initOrUpdateChart() {
       maintainAspectRatio: false,
       layout: { padding: { left: 5, right: 15, top: 10, bottom: 10 } },
       scales: {
-        y: { min: 0, max: 100, title: { display: true, text: '最小〜最大間の割合(%)', font: { size: 15, weight: 'bold' } } },
-        x: { bounds: 'data' }
+        y: {
+          min: 0,
+          max: 100,
+          title: { display: true, text: '最小〜最大間の割合(%)', font: { size: 15, weight: 'bold' } }
+        },
+        // ① 既存のX軸：通常センサー用の「文字」軸
+        x: {
+          type: 'category', // 文字モード
+          bounds: 'data',
+          ticks: { font: { size: 14, weight: '500' } }
+        },
+        // ② 💥新設：水位専用の「数値（線形）」軸
+        x_time: {
+          type: 'linear',   // 数値モード
+          min: 0,           // 0:00
+          max: 23,          // 23:00（横軸のLabels配列の最大インデックスと完全に合わせる）
+          display: false,   // 画面上には目盛りを非表示にしてスッキリさせる（裏で位置計算だけさせる）
+        }
       },
       plugins: {
         legend: { display: true, position: 'top', labels: { boxWidth: 14, padding: 12, font: { size: 14, weight: '600' } } },
         tooltip: {
           callbacks: {
+            title: function(context) {
+              if (!context || context.length === 0) return '';
+              const ctxObj = context[0];
+              const dataset = ctxObj.dataset;
+              const rIdx = ctxObj.dataIndex;
+
+              if (dataset.displayTimesArray && dataset.displayTimesArray[rIdx]) {
+                return dataset.displayTimesArray[rIdx];
+              }
+              return ctxObj.label || '';
+            },
+
             label: function(context) {
               const datasetLabel = context.dataset.label;
               const dIdx = context.datasetIndex;
               const rIdx = context.dataIndex;
 
-              const rawData = reportChartInstance.data.datasets[dIdx].rawValues[rIdx];
+              const dataset = reportChartInstance.data.datasets[dIdx];
+              const rawData = dataset.rawValues[rIdx];
               const fieldKey = Object.keys(TARGET_FIELDS).find(k => TARGET_FIELDS[k].label === datasetLabel);
               const unit = fieldKey ? TARGET_FIELDS[fieldKey].unit : '';
 
               if (rawData === null || rawData === undefined) return `${datasetLabel}: データなし`;
 
-              const isInterpolated = fixedReports24[rIdx]?._isInterpolated?.[fieldKey];
-              const suffix = isInterpolated ? " (※自動補間)" : "";
+              let suffix = "";
+              let isInterpolated = false;
+              let refillType = 'none';
 
-              const itemStatus = context.dataset.itemStatuses[rIdx];
+              // 💡 💥 修正：新設した直下のカスタムプロパティから安全に給水判定を取得
+              if (fieldKey === 'water_level' && dataset.refillTypes) {
+                refillType = dataset.refillTypes[rIdx] || 'none';
+                isInterpolated = dataset.isInterpolatedArray ? dataset.isInterpolatedArray[rIdx] : false;
+              } else {
+                isInterpolated = fixedReports24[rIdx]?._isInterpolated?.[fieldKey];
+              }
+
+              if (isInterpolated) suffix = " (※自動補間)";
+
+              // 💡 💥 最重要の修正：給水アクションを最優先でラベリング判定
               let prefix = "";
-              if (itemStatus === 'danger') prefix = "🚨[危険] ";
-              if (itemStatus === 'warning') prefix = "⚠️[警告] ";
+              if (refillType === 'before') {
+                prefix = "⛽[給水開始] ";
+              } else if (refillType === 'after') {
+                prefix = "🏁[給水終了] ";
+              } else {
+                // 給水イベント以外の場合のみ、通常のアラート判定を走らせる
+                const itemStatus = dataset.itemStatuses[rIdx];
+                if (itemStatus === 'danger') prefix = "🚨[危険] ";
+                if (itemStatus === 'warning') prefix = "⚠️[警告] ";
+              }
 
-              return `${prefix}${datasetLabel}: ${rawData.toFixed(1)}${unit}${suffix}`;
+              return `${prefix}${datasetLabel}: ${rawData.toFixed(1)} ${unit}${suffix}`;
             }
           },
           titleFont: { size: 15, weight: 'bold' },

@@ -1431,7 +1431,7 @@ class HydroManager:
 
             # 💡 ループ条件: ポンプがアクティブかつ、タイマーがまだ存在している（＝タイムアウトや手動停止していない）間
             while self.device.ssr_sub_pump.is_active and self.subpump_timer is not None:
-                gevent.sleep(0.5)
+                gevent.sleep(1.0) # 1秒ごとに監視
                 
                 # A) メインタンクの上限フロートスイッチ判定
                 if self.device.float_main_top.is_active:
@@ -1615,56 +1615,36 @@ class HydroManager:
             }
         }
 
-    def cmd_get_past_24h(self, data):
-        """過去24時間分のレポートデータを取得してフロントに送信する"""
-        self.logger.info("Graph data (past 24h) requested via command handler.")
-
-        # 先ほど HydroDB クラスに追加した関数を実行
-        past_reports = self.db.get_past_24h_reports()
-
-        # 💡 コマンドの送信元（ボタンを押した本人）の _client_sid を取得
-        client_sid = data.get('_client_sid')
-
-        if client_sid:
-            # 💡 データを一括で要求した本人だけに個別に送り返す（to=client_sid）
-            self.socketio.emit('response_past_24h', {'past_reports': past_reports}, to=client_sid)
-            return self.make_result(True, "Successfully fetched past 24h reports.")
-        else:
-            # 万が一 sid がない場合はブロードキャスト（予備対策）
-            self.broadcast('response_past_24h', {'past_reports': past_reports})
-            return self.make_result(True, "Fetched past 24h reports (broadcast).")
-
     def cmd_get_report_by_date(self, data):
-        """指定された日付のレポートデータを取得してフロントに送信する"""
+        """指定された日付のレポートデータと給水データを一括取得してフロントに送信する"""
         target_date = data.get('date')
         if not target_date:
             target_date = datetime.now().strftime('%Y-%m-%d')
 
-        self.logger.info(f"Graph data requested for date: {target_date}")
+        self.logger.info(f"Graph & Refill data requested for date: {target_date}")
 
-        # DBから指定日のデータを取得
+        # 1. 毎時レポートの取得 ＆ 判定情報のドッキング
         past_reports = self.db.get_report_by_date(target_date)
-
-        # 💡 各毎時レポートに判定ステータス（total_status等）を合成する
         evaluated_reports = []
         for report in past_reports:
-            # 既存の判定ロジックを実行
             status_info = self.evaluate(report)
-
-            # 元のデータにステータス辞書をドッキング（update）
             report.update(status_info)
             evaluated_reports.append(report)
+
+        # 2. 💥新設：同日の給水記録を取得
+        refill_records = self.db.get_refill_records_by_date(target_date)
 
         client_sid = data.get('_client_sid')
         response_payload = {
             'target_date': target_date,
-            'past_reports': evaluated_reports  # 💡 判定情報付きのデータを返す
+            'past_reports': evaluated_reports,
+            'refill_records': refill_records  # 💡 給水データを追加
         }
 
         if client_sid:
             self.socketio.emit('response_past_24h', response_payload, to=client_sid)
-            return self.make_result(True, f"Successfully fetched reports for {target_date}.")
+            return self.make_result(True, f"Successfully fetched reports and refill logs for {target_date}.")
         else:
             self.broadcast('response_past_24h', response_payload)
-            return self.make_result(True, f"Fetched reports for {target_date} (broadcast).")
+            return self.make_result(True, f"Fetched reports and refill logs for {target_date} (broadcast).")
 
