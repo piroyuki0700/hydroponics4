@@ -1378,34 +1378,47 @@ function initOrUpdateChart() {
   });
 
 
-  // 2. 0:00 〜 23:00 の24コマの固定スロットを生成
+  // 2. 0:00 〜 24:00 の25コマの固定スロットを生成
   const fixedLabels = [];
   const fixedReports24 = [];
   const statusTimeline = [];
 
-  for (let hour = 0; hour < 24; hour++) {
+  // 0:00 〜 24:00 の25コマの固定スロットを生成（24を25に変更）
+  for (let hour = 0; hour <= 24; hour++) { // 💥 修正：< 24 から <= 24 に変更
     const hourStr = String(hour).padStart(2, '0');
-    fixedLabels.push(`${hourStr}:00`);
 
-    const found = rawReportsCache.find(r => r.display_time && r.display_time.startsWith(`${hourStr}:`));
+    // 💡 24:00 のときは、表示を "24:00" にする
+    const displayLabel = (hour === 24) ? "24:00" : `${hourStr}:00`;
+    fixedLabels.push(displayLabel);
+
+    // 💡 24:00のデータは、翌日0:00として記録されているか、日付を跨いだ直後のデータを前方一致で探す
+    // 基本は hourStr で探しますが、24:00 のときは翌日の "00:00"（またはその日の最後のデータ）を優しく探します
+    const searchStr = (hour === 24) ? "00:00" : `${hourStr}:`;
+
+    // 24コマ目の特殊処理：当日か翌日0時のデータを探す
+    let found = null;
+    if (hour === 24) {
+      // 24:00に一番近い（あるいは日付が変わった直後の）データを探す
+      found = rawReportsCache.find(r => r.display_time === "24:00" || r.display_time === "00:00" && rawReportsCache.indexOf(r) === rawReportsCache.length - 1);
+    } else {
+      found = rawReportsCache.find(r => r.display_time && r.display_time.startsWith(searchStr));
+    }
 
     if (found) {
       fixedReports24.push(Object.assign({ _isInterpolated: {} }, found));
       statusTimeline.push(found.total_status || 'success');
     } else {
-      // 共有オブジェクトバグを防ぐため、各項目が個別に null を保持した空オブジェクトを生成
       const emptyReport = { total_status: 'success', _isInterpolated: {} };
-      Object.keys(TARGET_FIELDS).forEach(field => {
-        emptyReport[field] = null;
-      });
+      Object.keys(TARGET_FIELDS).forEach(field => { emptyReport[field] = null; });
       fixedReports24.push(emptyReport);
       statusTimeline.push('success');
     }
   }
 
+
   // 3. 指定された数（MAX_INTERPOLATE_GAPS）までのデータ欠損を自動線形補間するロジック
   Object.keys(TARGET_FIELDS).forEach(field => {
-    for (let i = 0; i < 24; i++) {
+    for (let i = 0; i <= 24; i++) {
       if (fixedReports24[i][field] === null || fixedReports24[i][field] === undefined) {
 
         // ① 直前の有効なデータ（左側）を探す
@@ -1495,7 +1508,7 @@ function initOrUpdateChart() {
     if (field === 'water_level') {
       let mixedTimeline = [];
 
-      // A. 定期レポート24コマ分を小数点インデックス座標（0.0 〜 23.0）としてプッシュ
+      // A. 定期レポート25コマ分を小数点インデックス座標（0.0 〜 24.0）としてプッシュ
       fixedReports24.forEach((r, idx) => {
         if (r[field] !== null && r[field] !== undefined) {
           const normalized = ((r[field] - mm.min) / (mm.max - mm.min)) * 100;
@@ -1711,7 +1724,7 @@ function initOrUpdateChart() {
         x_time: {
           type: 'linear',   // 数値モード
           min: 0,           // 0:00
-          max: 23,          // 23:00（横軸のLabels配列の最大インデックスと完全に合わせる）
+          max: 24,          // 24:00（横軸のLabels配列の最大インデックスと完全に合わせる）
           display: false,   // 画面上には目盛りを非表示にしてスッキリさせる（裏で位置計算だけさせる）
         }
       },
@@ -1788,7 +1801,7 @@ function initOrUpdateChart() {
       beforeDatasetsDraw: (chart) => {
         const { ctx, chartArea } = chart;
         if (!chartArea || statusTimeline.length === 0) return;
-        const count = 24;
+        const count = 25;
         const columnWidth = chartArea.width / (count - 1 || 1);
         ctx.save();
         for (let i = 0; i < count; i++) {
