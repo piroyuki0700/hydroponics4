@@ -258,28 +258,38 @@ class HydroDB:
                 self._check_connection()
                 cur = self.conn.cursor()
                 keys = self.getkeys(cur, 'report')
-
-                # 💡 指定日の 00:00:00 〜 23:59:59 の範囲を算出
+                
+                # 💡 終了時刻を30秒の猶予を持たせて「翌日の00:00:30」に拡張
                 start_time = f"{date_str} 00:00:00"
-                end_time = f"{date_str} 23:59:59"
-
+                
+                # 文字列の日付を一度Pythonのオブジェクトに変換し、1日足して翌日の日付を作る
+                target_dt = datetime.strptime(date_str, '%Y-%m-%d')
+                next_date_str = (target_dt + timedelta(days=1)).strftime('%Y-%m-%d')
+                end_time = f"{next_date_str} 00:00:30" # 💥 翌日0時0分30秒までを検索範囲にする
+                
+                # 💡 24:00の点と区別するため、翌日0時ちょうどのデータの display_time を "24:00" に書き換える処理を下に挟みます
                 sql = "SELECT * FROM `report` WHERE `created_at` BETWEEN ? AND ? ORDER BY `created_at` ASC"
                 cur.execute(sql, (start_time, end_time))
                 rows = cur.fetchall()
-
+                
                 result = []
                 for row in rows:
                     data = {}
                     for i in range(0, len(row)):
                         data[keys[i]] = self._serialize_value(row[i])
-
+                        
                     if isinstance(row[keys.index('created_at')], datetime):
-                        data['display_time'] = row[keys.index('created_at')].strftime('%H:%M')
+                        dt = row[keys.index('created_at')]
+                        # 💥 追記：もし取得したデータが「翌日の0時」だった場合、グラフが認識できるように display_time を "24:00" に化けさせる
+                        if dt.strftime('%Y-%m-%d') == next_date_str and dt.hour == 0 and dt.minute == 0:
+                            data['display_time'] = '24:00'
+                        else:
+                            data['display_time'] = dt.strftime('%H:%M')
                     else:
                         data['display_time'] = ''
-
+                        
                     result.append(data)
-
+                    
                 cur.close()
                 return result
             except mariadb.Error as e:

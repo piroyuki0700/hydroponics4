@@ -1383,26 +1383,16 @@ function initOrUpdateChart() {
   const fixedReports24 = [];
   const statusTimeline = [];
 
-  // 0:00 〜 24:00 の25コマの固定スロットを生成（24を25に変更）
-  for (let hour = 0; hour <= 24; hour++) { // 💥 修正：< 24 から <= 24 に変更
+  for (let hour = 0; hour <= 24; hour++) {
     const hourStr = String(hour).padStart(2, '0');
-
-    // 💡 24:00 のときは、表示を "24:00" にする
+    
+    // 💡 表示用ラベルの設定
     const displayLabel = (hour === 24) ? "24:00" : `${hourStr}:00`;
     fixedLabels.push(displayLabel);
 
-    // 💡 24:00のデータは、翌日0:00として記録されているか、日付を跨いだ直後のデータを前方一致で探す
-    // 基本は hourStr で探しますが、24:00 のときは翌日の "00:00"（またはその日の最後のデータ）を優しく探します
-    const searchStr = (hour === 24) ? "00:00" : `${hourStr}:`;
-
-    // 24コマ目の特殊処理：当日か翌日0時のデータを探す
-    let found = null;
-    if (hour === 24) {
-      // 24:00に一番近い（あるいは日付が変わった直後の）データを探す
-      found = rawReportsCache.find(r => r.display_time === "24:00" || r.display_time === "00:00" && rawReportsCache.indexOf(r) === rawReportsCache.length - 1);
-    } else {
-      found = rawReportsCache.find(r => r.display_time && r.display_time.startsWith(searchStr));
-    }
+    // 💡 サーバーから display_time = "24:00"（またはその時間のデータ）が降ってくるので、一発で検索できます
+    const searchStr = (hour === 24) ? "24:00" : `${hourStr}:`;
+    const found = rawReportsCache.find(r => r.display_time && r.display_time.startsWith(searchStr));
 
     if (found) {
       fixedReports24.push(Object.assign({ _isInterpolated: {} }, found));
@@ -1414,7 +1404,6 @@ function initOrUpdateChart() {
       statusTimeline.push('success');
     }
   }
-
 
   // 3. 指定された数（MAX_INTERPOLATE_GAPS）までのデータ欠損を自動線形補間するロジック
   Object.keys(TARGET_FIELDS).forEach(field => {
