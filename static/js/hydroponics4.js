@@ -1222,8 +1222,8 @@ const MAX_CACHE_DAYS = 7; // これを超えたら古いキャッシュから自
 // 各項目の設定（表示名、単位、カラー、初期表示状態）
 const TARGET_FIELDS = {
   air_temp:       { label: '気温', unit: '℃', color: 'rgb(255, 90, 110)', defaultShow: true },    // 赤
-  humidity:       { label: '湿度', unit: '%',  color: 'rgb(54, 142, 235)',  defaultShow: true },    // 青
-  water_temp:     { label: '水温', unit: '℃', color: 'rgb(75, 192, 192)', defaultShow: true },    // 青緑
+  humidity:       { label: '湿度', unit: '%',  color: 'rgb(75, 192, 192)',  defaultShow: true },    // 青
+  water_temp:     { label: '水温', unit: '℃', color: 'rgb(54, 142, 235)', defaultShow: true },    // 青緑
   water_pressure: { label: '水圧', unit: 'V',  color: 'rgb(255, 140, 64)',  defaultShow: false },   // 橙（初期OFF）
   water_level:    { label: '水位', unit: '%',  color: 'rgb(153, 102, 255)', defaultShow: true },   // 紫（初期OFF）
   tds_volt:       { label: 'EC電圧', unit: 'V',  color: 'rgb(255, 140, 160)', defaultShow: false },   // ピンク（初期OFF）
@@ -1342,14 +1342,16 @@ function updateDateButtonsState() {
  * グラフ描画コア関数（0:00〜23:00固定枠 ＆ アラート背景バグ修正 ＆ 1行統計連動版）
  */
 function initOrUpdateChart() {
-  const MAX_INTERPOLATE_GAPS = 2;
+  const MAX_INTERPOLATE_GAPS = 2; // 飛ばすことが可能な点の数（3つ以上空いたら自動で切る）
 
   const ctx = $('#reportChart');
   if (!ctx) return;
 
+  // グローバルフォント設定を大きくする（全グラフ要素に適用）
   Chart.defaults.font.size = 14;
   Chart.defaults.font.weight = '500';
 
+  // 各項目の最小・最大値の基準範囲、実際の値がこれをはみ出したらグラフのスケールを自動調整する
   const minMaxRef = {
     air_temp: { min: 15, max: 40 },
     humidity: { min: 0, max: 100 },
@@ -1362,6 +1364,7 @@ function initOrUpdateChart() {
     water_pulses: { min: 0, max: 2000 }
   };
 
+  // 1. 各項目の過去24時間における最小・最大値を計算（生データ全体から抽出）
   const minMaxMap = {};
   Object.keys(TARGET_FIELDS).forEach(field => {
     const values = rawReportsCache.map(r => r[field]).filter(v => v !== null && v !== undefined);
@@ -1374,11 +1377,11 @@ function initOrUpdateChart() {
     }
   });
 
-  // 0:00 〜 23:00 の24コマの固定スロットを生成
+
+  // 2. 0:00 〜 23:00 の24コマの固定スロットを生成
   const fixedLabels = [];
   const fixedReports24 = [];
   const statusTimeline = [];
-  const validAirTemps = [];
 
   for (let hour = 0; hour < 24; hour++) {
     const hourStr = String(hour).padStart(2, '0');
@@ -1389,10 +1392,8 @@ function initOrUpdateChart() {
     if (found) {
       fixedReports24.push(Object.assign({ _isInterpolated: {} }, found));
       statusTimeline.push(found.total_status || 'success');
-      if (found.air_temp !== null && found.air_temp !== undefined) {
-        validAirTemps.push(found.air_temp);
-      }
     } else {
+      // 共有オブジェクトバグを防ぐため、各項目が個別に null を保持した空オブジェクトを生成
       const emptyReport = { total_status: 'success', _isInterpolated: {} };
       Object.keys(TARGET_FIELDS).forEach(field => {
         emptyReport[field] = null;
@@ -1402,12 +1403,12 @@ function initOrUpdateChart() {
     }
   }
 
-  // 最大Nコマ（N時間）のデータ欠損を補間するロジック
+  // 3. 指定された数（MAX_INTERPOLATE_GAPS）までのデータ欠損を自動線形補間するロジック
   Object.keys(TARGET_FIELDS).forEach(field => {
     for (let i = 0; i < 24; i++) {
       if (fixedReports24[i][field] === null || fixedReports24[i][field] === undefined) {
 
-        // ① 直前の有効なデータを探す
+        // ① 直前の有効なデータ（左側）を探す
         let leftIdx = -1;
         for (let l = i - 1; l >= 0; l--) {
           if (fixedReports24[l][field] !== null && fixedReports24[l][field] !== undefined && !fixedReports24[l]._isInterpolated?.[field]) {
@@ -1416,7 +1417,7 @@ function initOrUpdateChart() {
           }
         }
 
-        // ② 直後の有効なデータを探す
+        // ② 直後の有効なデータ（右側）を探す
         let rightIdx = -1;
         for (let r = i + 1; r < 24; r++) {
           if (fixedReports24[r][field] !== null && fixedReports24[r][field] !== undefined && !fixedReports24[r]._isInterpolated?.[field]) {
@@ -1425,7 +1426,7 @@ function initOrUpdateChart() {
           }
         }
 
-        // ③ 両側にデータが見つかり、隙間が指定数以内の場合のみ埋める
+        // ③ 両側にデータが見つかり、かつその隙間が指定数以内の場合のみ埋める
         if (leftIdx !== -1 && rightIdx !== -1) {
           const gapSize = rightIdx - leftIdx - 1;
 
@@ -1433,7 +1434,7 @@ function initOrUpdateChart() {
             const leftVal = fixedReports24[leftIdx][field];
             const rightVal = fixedReports24[rightIdx][field];
 
-            // 線形補間
+            // 線形補間（前後の値から均等に配分）
             const interpolatedValue = leftVal + (rightVal - leftVal) * ((i - leftIdx) / (rightIdx - leftIdx));
             fixedReports24[i][field] = interpolatedValue;
             fixedReports24[i]._isInterpolated[field] = true;
@@ -1443,36 +1444,63 @@ function initOrUpdateChart() {
     }
   });
 
-  // 横書き1行の枠内に最高・最低気温を確実に書き込む
-  const maxEl = $('#stat_max_temp');
-  const minEl = $('#stat_min_temp');
-  if (validAirTemps.length > 0) {
-    if (maxEl) maxEl.textContent = `${Math.max(...validAirTemps).toFixed(1)} ℃`;
-    if (minEl) minEl.textContent = `${Math.min(...validAirTemps).toFixed(1)} ℃`;
-  } else {
-    if (maxEl) maxEl.textContent = `--.- ℃`;
-    if (minEl) minEl.textContent = `--.- ℃`;
+  // 4. 横書き1行のコンパクトな統計枠（上部）への、気温・水温範囲の同期書き込み
+  const validAirTemps = [];
+  const validWaterTemps = [];
+
+  fixedReports24.forEach(r => {
+    // 自動補間されたデータは統計値（最高・最低）から除外して純粋な測定値だけで集計する
+    if (r.air_temp !== null && r.air_temp !== undefined && !r._isInterpolated?.air_temp) {
+      validAirTemps.push(r.air_temp);
+    }
+    if (r.water_temp !== null && r.water_temp !== undefined && !r._isInterpolated?.water_temp) {
+      validWaterTemps.push(r.water_temp);
+    }
+  });
+
+  // ① 気温範囲「最小 〜 最大 ℃」の更新
+  const tempRangeEl = $('#stat_temp_range');
+  if (tempRangeEl) {
+    if (validAirTemps.length > 0) {
+      const min = Math.min(...validAirTemps).toFixed(1);
+      const max = Math.max(...validAirTemps).toFixed(1);
+      tempRangeEl.textContent = `${min} 〜 ${max} ℃`;
+    } else {
+      tempRangeEl.textContent = `--.- 〜 --.- ℃`;
+    }
   }
 
-  // 各データセットの組み立て（水位専用の不定期ブレンド対応版）
+  // ② 水温範囲「最小 〜 最大 ℃」の更新
+  const wtempRangeEl = $('#stat_wtemp_range');
+  if (wtempRangeEl) {
+    if (validWaterTemps.length > 0) {
+      const min = Math.min(...validWaterTemps).toFixed(1);
+      const max = Math.max(...validWaterTemps).toFixed(1);
+      wtempRangeEl.textContent = `${min} 〜 ${max} ℃`;
+    } else {
+      wtempRangeEl.textContent = `--.- 〜 --.- ℃`;
+    }
+  }
+
+
+  // 5. 各データセットの組み立て（水位の不定期プロット ＆ その他センサーの分離マッピング）
   const datasets = Object.keys(TARGET_FIELDS).map(field => {
     const config = TARGET_FIELDS[field];
     const mm = minMaxMap[field];
 
-    // 現在の日付に対応する給水データをキャッシュマップから安全に取得
+    // 現在表示中の日付に紐づく給水記録アレイをキャッシュから取得
     const currentRefillLogs = reportDateCacheMap[currentDisplayDate]?.refills || [];
 
-    // 水位（water_level）の場合のみ、インデックス（0〜23）をベースにした小数点座標を合成する
-    // 💥 修正：水位（water_level）の場合のみ、小数点の数値X座標を持つ特殊オブジェクトアレイを合成する
+    // 💧 水位（water_level）の場合：不定期な給水前後の点を時間の隙間に正確にマージする
     if (field === 'water_level') {
       let mixedTimeline = [];
 
-      // 1. 定期レポート24コマ分の水位を、目盛り位置（0.0 〜 23.0）の数値座標としてプッシュ
+      // A. 定期レポート24コマ分を小数点インデックス座標（0.0 〜 23.0）としてプッシュ
       fixedReports24.forEach((r, idx) => {
         if (r[field] !== null && r[field] !== undefined) {
           const normalized = ((r[field] - mm.min) / (mm.max - mm.min)) * 100;
           mixedTimeline.push({
-            x: parseFloat(idx), // 💡 0.0, 1.0, 2.0 という「時間の数値」そのものをXにする
+            x: parseFloat(idx),
             displayTime: `${String(idx).padStart(2, '0')}:00`,
             y: normalized,
             rawValue: r[field],
@@ -1483,8 +1511,7 @@ function initOrUpdateChart() {
         }
       });
 
-      // 2. その日の給水ログ（before/after）を割り込ませる
-      const currentRefillLogs = reportDateCacheMap[currentDisplayDate]?.refills || [];
+      // B. 給水ログを、時間の隙間の小数点座標に換算して割り込ませる
       currentRefillLogs.forEach(log => {
         if (log.time_before && log.time_before.includes(':') && log.level_before !== null && log.level_before !== undefined) {
           const parts = log.time_before.split(':');
@@ -1506,10 +1533,9 @@ function initOrUpdateChart() {
         }
       });
 
-      // 3. 時間順に正確に並び替え
+      // C. 時間の数値（0.0 〜 23.99）の順に、確実にソート（これでV字に線が繋がります）
       mixedTimeline.sort((a, b) => a.x - b.x);
 
-      // 4. 各パーツの組み立て
       const pointStyles = [];
       const pointRadii = [];
       const pointBgColors = [];
@@ -1585,7 +1611,7 @@ function initOrUpdateChart() {
       };
     }
 
-    // 💡 水位以外のその他すべてのセンサー（気温、湿度など）は「以前の正常動作コード」をそのまま100%維持
+    // 📊 水位以外のその他すべてのセンサー（気温、湿度、EC値など）：これまで通りの24コマ固定
     else {
       const rawValues = fixedReports24.map(r => r[field]);
       const normalizedValues = rawValues.map(v => {
@@ -1655,6 +1681,7 @@ function initOrUpdateChart() {
     }
   });
 
+  // 6. 既存グラフインスタンスの安全な破棄と再生成
   if (reportChartInstance) {
     reportChartInstance.destroy();
     reportChartInstance = null;
@@ -1668,18 +1695,19 @@ function initOrUpdateChart() {
       maintainAspectRatio: false,
       layout: { padding: { left: 5, right: 15, top: 10, bottom: 10 } },
       scales: {
+        // Y軸：共通の割合軸（0〜100%）
         y: {
           min: 0,
           max: 100,
           title: { display: true, text: '最小〜最大間の割合(%)', font: { size: 15, weight: 'bold' } }
         },
-        // ① 既存のX軸：通常センサー用の「文字」軸
+        // X軸①：通常センサー用の「文字（カテゴリー）」軸
         x: {
           type: 'category', // 文字モード
           bounds: 'data',
           ticks: { font: { size: 14, weight: '500' } }
         },
-        // ② 💥新設：水位専用の「数値（線形）」軸
+        // X軸②：水位データが中間の時間にプロットするための「裏方数値」軸
         x_time: {
           type: 'linear',   // 数値モード
           min: 0,           // 0:00
@@ -1691,18 +1719,22 @@ function initOrUpdateChart() {
         legend: { display: true, position: 'top', labels: { boxWidth: 14, padding: 12, font: { size: 14, weight: '600' } } },
         tooltip: {
           callbacks: {
+            // 💡 1行目のタイトル（時刻文字列）のカスタム制御
             title: function(context) {
               if (!context || context.length === 0) return '';
               const ctxObj = context[0];
               const dataset = ctxObj.dataset;
               const rIdx = ctxObj.dataIndex;
 
+              // 水位データの場合は、独自の displayTimesArray から "16:04" などの正しい時刻文字列を1行目に表示
               if (dataset.displayTimesArray && dataset.displayTimesArray[rIdx]) {
                 return dataset.displayTimesArray[rIdx];
               }
+              // 通常のセンサーは、これまで通り横軸の「16:00」などのラベル文字列を表示
               return ctxObj.label || '';
             },
 
+            // 💡 2行目の数値テキスト表示のカスタム制御
             label: function(context) {
               const datasetLabel = context.dataset.label;
               const dIdx = context.datasetIndex;
@@ -1729,7 +1761,7 @@ function initOrUpdateChart() {
 
               if (isInterpolated) suffix = " (※自動補間)";
 
-              // 💡 💥 最重要の修正：給水アクションを最優先でラベリング判定
+              // 給水アクションまたは通常しきい値アラートのアイコン判定
               let prefix = "";
               if (refillType === 'before') {
                 prefix = "⛽[給水開始] ";
@@ -1750,6 +1782,7 @@ function initOrUpdateChart() {
         }
       }
     },
+    // 💡 7. 各時間のステータスに応じた背景アラートの描画（しきい値オーバー時間帯を薄い赤/黄の帯で塗る）
     plugins: [{
       id: 'alertBackground',
       beforeDatasetsDraw: (chart) => {

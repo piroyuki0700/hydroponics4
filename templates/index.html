@@ -535,18 +535,23 @@
             今日
           </button>
 
-          <!-- 💡 修正：ボタンの右側に横書き1行で収まるコンパクトな統計枠（薄い枠線あり） -->
+          <!-- 💡 修正：ボタンの右側に収まるウルトラシンプルな統計枠（カラー連動版） -->
           <div class="d-inline-flex align-items-center px-3 py-1 ms-3 border bg-light rounded shadow-sm" style="gap: 15px; height: 31px;">
-            <span class="fw-bold text-dark" style="font-size: 0.85rem;"><i class="bi bi-thermometer-half me-1"></i>24h統計:</span>
-            <div class="d-flex align-items-center" style="gap: 5px;">
-              <span class="text-danger fw-bold" style="font-size: 0.85rem;">最高</span>
-              <span class="fw-bold text-dark" id="stat_max_temp" style="font-size: 1.0rem;">--.- ℃</span>
+            <span class="fw-bold text-dark" style="font-size: 0.85rem;"><i class="bi bi-chart-line me-1"></i>24h範囲:</span>
+            
+            <!-- 🌡️ 気温（グラフと同じ赤色：rgb(255, 99, 132) に合わせます） -->
+            <div class="d-flex align-items-center" style="gap: 6px; border-right: 1px solid #ccc; padding-right: 15px;">
+              <span class="fw-bold" style="font-size: 0.85rem; color: rgb(255, 99, 132);">気温:</span>
+              <span class="fw-bold text-dark" id="stat_temp_range" style="font-size: 0.95rem;">--.- 〜 --.- ℃</span>
             </div>
-            <div class="d-flex align-items-center" style="gap: 5px;">
-              <span class="text-primary fw-bold" style="font-size: 0.85rem;">最低</span>
-              <span class="fw-bold text-dark" id="stat_min_temp" style="font-size: 1.0rem;">--.- ℃</span>
+
+            <!-- 💧 水温（グラフと同じ青緑色：rgb(75, 192, 192) に合わせます） -->
+            <div class="d-flex align-items-center" style="gap: 6px;">
+              <span class="fw-bold" style="font-size: 0.85rem; color: rgb(54, 162, 235);">水温:</span>
+              <span class="fw-bold text-dark" id="stat_wtemp_range" style="font-size: 0.95rem;">--.- 〜 --.- ℃</span>
             </div>
           </div>
+
         </div>
 
         <!-- 💡 グラフ描画エリア：横幅を100%（最大）に広げました -->
