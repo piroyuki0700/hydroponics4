@@ -51,9 +51,9 @@ class PumpSwitcher:
             self.thread.join(timeout=1)
             self.thread = None
 
-        # 💡 停止時もcycle_callbackを通じてクライアントへ通知
-        if self.cycle_callback:
-            self.cycle_callback('cycle_stop', 0)
+            # 💡 停止時もcycle_callbackを通じてクライアントへ通知
+            if self.cycle_callback:
+                self.cycle_callback('cycle_stop', 0)
 
     def _loop(self):
         self.logger.info("Pump intermittent loop started (with recovery logic).")
@@ -89,6 +89,8 @@ class PumpSwitcher:
             # if self.ontime > CHECK_DELAY and not self.device.water_check.is_active:
             if self.ontime > CHECK_DELAY and diff_level < WATER_LEVEL_THRESHOLD:  # 水位が設定値まで変化していない場合は循環不全と判定
                 self.logger.warning(f"Circulation failure {diff_level} detected on {pump_name}! Switching to {backup_name}.")
+                if self.cycle_callback:
+                    self.cycle_callback('cycle_ng')
                 target_pump.off()
                 backup_pump.on()
                 # Delegate emergency sending to provided callback (manager will check emergency_active)
@@ -101,8 +103,9 @@ class PumpSwitcher:
             else:
                 if self.ontime > CHECK_DELAY:
                     self.logger.info(f"{pump_name} circulation confirmed.")
-                if self.event.wait(max(0, self.ontime - wait_check)):
-                    break
+                if self.cycle_callback:
+                    self.cycle_callback('cycle_ok')
+                if self.event.wait(max(0, self.ontime - wait_check)): break
 
             # すべてのポンプを一旦完全に止める
             self.device.pump_main_a.off()
@@ -163,6 +166,8 @@ class HydroManager:
         # 💡 新機能用の変数初期化
         self.flow_count = 0        # 流量センサーの累計パルス数カウンター
         self.last_flow_count = 0   # 前回チェック時のパルス数
+
+        self.water_check_status = "unchecked"
 
         # 💡 流量センサー（パルス信号）がONになるたびに自動でカウンターを+1するイベントを登録
         # gpiozeroのButtonクラスが持つバックグラウンド機能を利用するため、競合せず正確に数えます
@@ -519,6 +524,7 @@ class HydroManager:
                     msg += "\n" + stderr
                 self.broadcast('server_log', {'message': msg, 'datetime': now.strftime('%Y/%m/%d %H:%M:%S')})
                 self.logger.error("Auto hourly picture capture failed.")
+                self.send_emergency_if_enabled(f'カメラ撮影に失敗しました。{msg}')
 
         # 3. 給水用電磁ボールバルブ（water_valve）の明け方定時開閉判定
         water_pulses = self._manage_water_valve_and_flow(now)
@@ -875,10 +881,11 @@ class HydroManager:
         except Exception as e:
             self.logger.error(f"Broadcast to event [{event_name}] failed: {e}")
 
-    def _pump_cycle_status(self, status, seconds):
+    def _pump_cycle_status(self, status, seconds=0):
         """PumpSwitcherからの状態通知を受け取るコールバック"""
         data = {'status': status, 'seconds': seconds}
-        self.db.set_pump_status(data)
+        if status != 'cycle_ok' and status != 'cycle_ng':
+            self.db.set_pump_status(data)
         self.broadcast('pump_status', data)
 
     def make_result(self, ok, message, show_popup=False):
@@ -1537,8 +1544,8 @@ class HydroManager:
             'float_main_top': self.device.float_main_top.is_active,
             'float_main_bottom': self.device.float_main_bottom.is_active,
             'float_sub': self.device.float_sub.is_active,
-            'leak_detect': self.device.leak_detect.is_active,
-            'water_check': self.device.water_check.is_active,
+            'leak_detect': not self.device.leak_detect.is_active,
+            'water_check': self.water_check_status,
             'refill_level': self.sensors.read_water_level(),
             'water_valve': self.device.water_valve.is_active
         }

@@ -542,6 +542,7 @@ function setValuePumpStatus(data)
       if (pumpInfoEl) pumpInfoEl.textContent = 'オート動作中';
       if (cycleIconEl) cycleIconEl.classList.remove('bi-spin');
       pump_active = false;
+      setValuePumpStatusWaterCheck(data);
       break;
 
     case 'manual_start':
@@ -549,6 +550,11 @@ function setValuePumpStatus(data)
       if (cycleIconEl) cycleIconEl.classList.add('bi-spin');
       pump_active = true;
       break;
+
+    case 'cycle_ok':
+    case 'cycle_ng':
+      setValuePumpStatusWaterCheck(data);
+      return;
 
     case 'auto_stop':
     case 'manual_stop':
@@ -560,6 +566,40 @@ function setValuePumpStatus(data)
   }
 
   pumpStatusUpdate(data['seconds']);
+}
+
+function setValuePumpStatusWaterCheck(data) {
+  // 循環検知状態
+  // ポンプ循環状態の変数（例として'unchecked', 'ok', 'ng' の3つの文字列を想定）
+  // 実際のシステムに合わせて変数の取得方法を変更してください
+  const water_check = data['status'];
+  const pumpIcon = $('#icon_water_check'); // ポンプ表示用のHTML要素
+
+  if (pumpIcon) {
+    // 1. まず現在の状態に関わるクラスをすべてリセット
+    const allClasses = [
+      'bi-dash-circle', 'text-secondary', // 未チェック
+      'bi-check-circle', 'text-success',  // OK
+      'bi-x-circle', 'text-danger'        // NG
+    ];
+    pumpIcon.classList.remove(...allClasses);
+
+    // 2. 状態（3パターン）に応じて適切なクラスを追加
+    switch (water_check) {
+      case 'cycle_ok': // OK状態（緑のチェック）
+        pumpIcon.classList.add('bi-check-circle', 'text-success');
+        break;
+
+      case 'cycle_ng': // NG状態（赤のバツ）
+        pumpIcon.classList.add('bi-x-circle', 'text-danger');
+        break;
+
+      case 'cycle_stop': // チェック無効状態（グレーのハイフン）
+      default:
+        pumpIcon.classList.add('bi-dash-circle', 'text-secondary');
+        break;
+    }
+  }
 }
 
 /**
@@ -623,23 +663,38 @@ function setValueRefillUpdate(data, append = false) {
     if (refillLevel) refillLevel.textContent = 'ー';
   }
 
-  // フロートスイッチ、漏水検知、循環検知状態
-  const input_switchs = ['float_main_top', 'float_main_bottom', 'float_sub', 'leak_detect', 'water_check', 'water_valve'];
+  // 対象とするスイッチのリスト（サーバー側で値の正負は調整済み前提）
+  const input_switchs = ['float_main_top', 'float_main_bottom', 'float_sub', 'leak_detect', 'water_valve'];
+
   for (const input_switch of input_switchs) {
     if (input_switch in data) {
       const iconSwitch = $('#icon_' + input_switch);
+
       if (iconSwitch) {
-        if (data[input_switch]) {
-          iconSwitch.classList.remove('bi-x-circle', 'text-danger');
-          iconSwitch.classList.add('bi-check-circle', 'text-success');
+        const isTrue = data[input_switch];
+
+        // 1. 基本となるON/OFFのアイコンと色を定義
+        let onIcon  = 'bi-check-circle';
+        let offIcon = 'bi-x-circle';
+
+        // 2. ボールバルブの場合だけ、アイコンの種類を上書き
+        if (input_switch === 'water_valve') {
+          onIcon  = 'bi-play-circle';
+          offIcon = 'bi-stop-circle';
+        }
+
+        // 3. 状態に応じてクラスを一括で張り替え
+        if (isTrue) {
+          iconSwitch.classList.remove(offIcon, 'text-danger');
+          iconSwitch.classList.add(onIcon, 'text-success');
         } else {
-          iconSwitch.classList.remove('bi-check-circle', 'text-success');
-          iconSwitch.classList.add('bi-x-circle', 'text-danger');
+          iconSwitch.classList.remove(onIcon, 'text-success');
+          iconSwitch.classList.add(offIcon, 'text-danger');
         }
       }
     }
   }
-  
+
   // 📜 給水履歴ログの反映（サーバー側で連結済みのテキストを一括流し込み）
   const refillLog = $('#refill_log');
   if (refillLog && 'refill_records' in data) {
@@ -855,13 +910,10 @@ function pumpStatusUpdate(seconds)
   if (seconds < 0) {
     // 連続動作
     if (pumpCountdown) pumpCountdown.textContent = "連続";
-  }
-  else if (seconds == 0) {
+  } else if (seconds == 0) {
     // 停止
     if (pumpCountdown) pumpCountdown.textContent = "停止";
-  }
-  else
-  {
+  } else {
     // カウントダウン開始
     pumpCountdownStart(seconds);
   }

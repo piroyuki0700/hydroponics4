@@ -239,7 +239,8 @@ class HydroDB:
         if row.get('end_time'):
             end = datetime.strptime(row.get('end_time'), '%Y/%m/%d %H:%M:%S')
             seconds = (end - datetime.now()).total_seconds()
-
+            if seconds < 0 and row.get('status') is not 'manual_start':
+                seconds = 0
         return {'status': row.get('status', 'manual_stop'), 'seconds': seconds}
 
     def insert_picture(self, data):
