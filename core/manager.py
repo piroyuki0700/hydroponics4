@@ -615,6 +615,16 @@ class HydroManager:
             except Exception as e:
                 self.logger.error(f"Failed during scheduled fertilizer adjustment check: {e}")
 
+            # 12. 夜間のみusb_reserveをONにする。
+            nightly_active = bool(int(self.schedule.get('nightly_active', 0)))
+            if nightly_active and mode == "Night":
+                self.logger.info("Nightly USB reserve activation is enabled. Turning ON usb_reserve.")
+                # 予備USB出力をON
+                self.device.usb_reserve.on()
+            else:
+                self.logger.info("Nightly USB reserve activation is disabled or not Night mode. Ensuring usb_reserve is OFF.")
+                self.device.usb_reserve.off()
+
     def compare_last_report(self, report):
         last_report = self.db.get_latest_report()
         if (last_report['water_level'] is not None and report['water_level'] is not None and
@@ -674,19 +684,6 @@ class HydroManager:
                 else:
                     self.logger.critical("Cannot open water valve! Leak is currently detected at the opening window.")
                     self.device.water_valve.off()
-
-            # 💡 さらに、もし今がちょうど水開けのタイミングだったら、予備USB出力も連動して30秒間ONにする特別な処理を追加
-            nightly_active = bool(int(self.schedule.get('nightly_active', 0)))
-            if int(v_open) == now.hour and nightly_active:
-                self.logger.info(f"Water window started ({now.hour}h). Activating hot water purge via USB Reserve for 30s!")
-
-                # 予備USB出力をON
-                self.device.usb_reserve.on()
-
-                # 30秒後に自動でOFFにする非ブロッキングタイマーを起動
-                self.usb_reserve_timer = threading.Timer(self.USB_RESERVE_ON_SECONDS, self._usb_reserve_off_callback)
-                self.usb_reserve_timer.start()
-
         else:
             self.logger.info("Out of water window. Closing water valve.")
             self.device.water_valve.off()
@@ -739,13 +736,6 @@ class HydroManager:
         self.switcher.offtime = offtime
         self.logger.info(f"Starting intermittent pump cycle for {mode} (ON:{ontime}s, OFF:{offtime}s)")
         self.switcher.start()
-
-    def _usb_reserve_off_callback(self):
-        """30秒後に予備USBを安全にOFFにするバックグラウンドコールバック"""
-        self.logger.info("USB Reserve timeout reached (30s). Turning OFF USB Reserve.")
-        self.device.usb_reserve.off()
-        if self.usb_reserve_timer is not None:
-            self.usb_reserve_timer = None
 
     def _handle_stop(self):
         """minute_stop分の処理：すべてのメインポンプとエアレーションを個別に停止（換気扇・バルブは維持）"""
@@ -875,7 +865,7 @@ class HydroManager:
     def broadcast(self, event_name, data):
         """全クライアントのカスタムイベント(JS側の待ち受けイベント名)へ一斉通知"""
         try:
-            self.logger.info(f"Broadcasting event [{event_name}] to all clients. Data: {data}")
+            # self.logger.info(f"Broadcasting event [{event_name}] to all clients. Data: {data}")
             cleaned_data = self._clean_dict(data)
             self.socketio.emit(event_name, cleaned_data)
         except Exception as e:
@@ -1266,6 +1256,12 @@ class HydroManager:
         else:
             # 通常：下限スイッチが感知（水切れしている）場合に補充
             perform_refill = not self.device.float_main_bottom.is_active
+            # 下限スイッチが感知していなくても水位が10%以下なら補充する
+            if not perform_refill:
+                water_level = self.sensors.read_water_level()
+                if water_level is not None and water_level <= 10:
+                    self.logger.info(f"Water level is low ({water_level}%). Triggering refill.")
+                    perform_refill = True
 
         if perform_refill:
             if self.device.float_sub.is_active: # サブタンクに水があるか
@@ -1434,7 +1430,9 @@ class HydroManager:
 
                 # メインの監視タスクを止めないよう、液肥シークエンス自体もさらに別タスクとして非同期に切り離す
                 # これにより、途中で満水になってサブポンプが止まっても、液肥は最後まで独立して回りきります！
-                self.socketio.start_background_task(self._fertilize_sequence_task, f1_sec, f2_sec, f3_sec, f4_sec)
+                # 起動元がサブポンプの監視タスク内であり、サブポンプは別スレッドで動作するため
+                # システム生存チェックはスキップして液肥シーケンスを独立して実行する
+                self.socketio.start_background_task(self._fertilize_sequence_task, f1_sec, f2_sec, f3_sec, f4_sec, True)
 
             # 💡 ループ条件: ポンプがアクティブかつ、タイマーがまだ存在している（＝タイムアウトや手動停止していない）間
             while self.device.ssr_sub_pump.is_active and self.subpump_timer is not None:

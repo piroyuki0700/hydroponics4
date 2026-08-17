@@ -109,11 +109,14 @@ class HydroDB:
         data = self.get(table, "WHERE no = 1")
         return data[0] if data else {}
 
-    def getlatest(self, table, num=1):
-        data = self.get(table, f"ORDER BY no DESC LIMIT {num}")
-        if num == 1:
-            return data[0] if data else {}
-        return data
+    def getlatest(self, table):
+        """Return the latest single record from `table` as a dict, or {} if none."""
+        data = self.get(table, "ORDER BY no DESC LIMIT 1")
+        return data[0] if data else {}
+
+    def getlatestnum(self, table, num=1):
+        """Return the latest `num` records from `table` as a list of dicts."""
+        return self.get(table, f"ORDER BY no DESC LIMIT {num}")
 
     def insert(self, table, data):
         with self.lock_db:
@@ -203,17 +206,18 @@ class HydroDB:
 
     def get_latest_refill_records(self, no=3):
         """最新3件の給水履歴を改行で連結した1本の文字列としてフロントに返す"""
-        dic_array = self.getlatest('refill_record', no)
-        
-        # ログ文字列をリスト化。新しい履歴が下に来るよう、古い順に並べる。
-        records_list = [self.make_refill_record_string(data) for data in reversed(dic_array)]
-        
-        # 💡 サーバー側で最初から改行コードで合体させる（末尾にも改行を付与）
-        joined_string = "\n".join(records_list) + "\n" if records_list else ""
-            
-        return {
-            'refill_records': joined_string
-        }
+        dic_array = self.getlatestnum('refill_record', no)
+
+        if not dic_array:
+            return {'refill_records': ''}
+
+        # 古い順（昇順）に並べて文字列化
+        records = []
+        for record in reversed(dic_array):
+            records.append(self.make_refill_record_string(record))
+
+        joined_string = "\n".join(records) + "\n" if records else ""
+        return {'refill_records': joined_string}
 
     def set_basic(self, data):
         now = datetime.now()
