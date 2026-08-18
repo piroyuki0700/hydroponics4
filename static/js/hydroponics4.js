@@ -55,6 +55,20 @@ document.addEventListener('DOMContentLoaded', () => {
   // タブイベントハンドラーの初期化
   initTabEventHandlers();
 
+  // レポート日付入力（カレンダー）ハンドラの初期化
+  const reportDateEl = $('#txt_report_date');
+  if (reportDateEl) {
+    // 最大は今日までにする
+    try { reportDateEl.max = getTodayString(); } catch (e) {}
+    reportDateEl.addEventListener('change', () => {
+      if (reportDateEl.value) {
+        currentDisplayDate = reportDateEl.value;
+        refreshCurrentDateReports();
+        updateDateButtonsState();
+      }
+    });
+  }
+
   // websocket-serverと接続
   websocketConnect();
 });
@@ -222,7 +236,9 @@ function websocketConnect()
 
       // 画面上の日付テキスト表示領域を更新
       const dateEl = $('#txt_report_date');
-      if (dateEl) dateEl.textContent = resDate;
+      if (dateEl) {
+        if (dateEl.tagName === 'INPUT') dateEl.value = resDate; else dateEl.textContent = resDate;
+      }
 
       const formattedReports = data.past_reports.map(r => {
         const copy = Object.assign({}, r);
@@ -1305,21 +1321,32 @@ function requestTodayReports() {
 }
 
 /**
+ * UI: カレンダー横の「強制再読み込み」ボタンから呼ばれる
+ */
+function forceReloadReports() {
+  const dateEl = $('#txt_report_date');
+  if (dateEl) {
+    if (dateEl.tagName === 'INPUT') currentDisplayDate = dateEl.value || getTodayString();
+  }
+  refreshCurrentDateReports(true);
+}
+
+/**
  * 💡 修正：サーバーへデータを要求する関数（今日だけキャッシュをスルーする仕様）
  */
-function refreshCurrentDateReports() {
+function refreshCurrentDateReports(force = false) {
   if (!currentDisplayDate) return;
 
   const todayStr = getTodayString();
 
-  // もしすでにキャッシュにデータが存在すれば、サーバーへ通信せず即座に描画
-  if (currentDisplayDate !== todayStr && reportDateCacheMap[currentDisplayDate]) {
+  // もし force でない（通常）かつキャッシュにデータが存在すれば、サーバーへ通信せず即座に描画
+  if (!force && currentDisplayDate !== todayStr && reportDateCacheMap[currentDisplayDate]) {
     printDebugMessage(`[Cache Hit] 過去データのため、${currentDisplayDate} をキャッシュから展開します。`);
 
     // キャッシュ展開時にも、画面上の日付テキスト表示領域を確実に更新する
     const dateEl = $('#txt_report_date');
     if (dateEl) {
-      dateEl.textContent = currentDisplayDate;
+      if (dateEl.tagName === 'INPUT') dateEl.value = currentDisplayDate; else dateEl.textContent = currentDisplayDate;
     }
 
     rawReportsCache = reportDateCacheMap[currentDisplayDate].reports;
@@ -1327,9 +1354,9 @@ function refreshCurrentDateReports() {
     return;
   }
 
-  // 今日であるか、キャッシュがない場合は必ずサーバーへ最新データを要求
+  // 今日であるか、キャッシュがない場合、または force=true の場合は必ずサーバーへ最新データを要求
   const logPrefix = (currentDisplayDate === todayStr) ? "[Network - Today最新]" : "[Network]";
-  printDebugMessage(`${logPrefix} ${currentDisplayDate} のグラフデータをサーバーに要求中...`);
+  printDebugMessage(`${logPrefix} ${currentDisplayDate} のグラフデータをサーバーに要求中... (force=${force})`);
 
   websocket_send({
     command: 'get_report_by_date',
