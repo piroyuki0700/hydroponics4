@@ -1804,15 +1804,26 @@ function initOrUpdateChart() {
             title: function(context) {
               if (!context || context.length === 0) return '';
               const ctxObj = context[0];
-              const dataset = ctxObj.dataset;
               const rIdx = ctxObj.dataIndex;
 
-              // 水位データの場合は、独自の displayTimesArray から "16:04" などの正しい時刻文字列を1行目に表示
-              if (dataset.displayTimesArray && dataset.displayTimesArray[rIdx]) {
-                return dataset.displayTimesArray[rIdx];
+              // dataset が無ければフォールバックでチャート内の対応するデータセットを参照
+              const ds = ctxObj.dataset || reportChartInstance.data.datasets[ctxObj.datasetIndex];
+
+              // 時刻ラベルは displayTimesArray が優先、それ以外は軸ラベルを使用
+              const timeLabel = (ds && ds.displayTimesArray && ds.displayTimesArray[rIdx]) ? ds.displayTimesArray[rIdx] : (ctxObj.label || '');
+
+              // アイコン付与ロジック（給水／ステータス）をインラインで処理
+              let note = '';
+              if (ds && ds.refillTypes && ds.refillTypes[rIdx]) {
+                const rt = ds.refillTypes[rIdx];
+                if (rt === 'before') note = ' ⛽給水開始';
+                else if (rt === 'after') note = ' 🏁給水終了';
+              } else {
+                const st = ds && ds.itemStatuses ? ds.itemStatuses[rIdx] : null;
+                if (st === 'danger') note = ' 🚨危険';
+                else if (st === 'warning') note = ' ⚠️警告';
               }
-              // 通常のセンサーは、これまで通り横軸の「16:00」などのラベル文字列を表示
-              return ctxObj.label || '';
+              return timeLabel + note;
             },
 
             // 💡 2行目の数値テキスト表示のカスタム制御
@@ -1828,34 +1839,32 @@ function initOrUpdateChart() {
 
               if (rawData === null || rawData === undefined) return `${datasetLabel}: データなし`;
 
-              let suffix = "";
+              // 2行目は「値（Δ差分）」の一定書式にする
+              const dec = (fieldKey === 'tds_level') ? 2 : 1;
+              const valueStr = `${rawData.toFixed(dec)} ${unit}`;
+
+              // 差分表示：1つ前のデータとの差分を計算（rIdx が 0 の場合は差分表示なし）
+              let deltaStr = '';
+              if (rIdx > 0) {
+                const prevRaw = dataset.rawValues[rIdx - 1];
+                if (prevRaw !== null && prevRaw !== undefined) {
+                  const delta = rawData - prevRaw;
+                  const sign = delta >= 0 ? '+' : '';
+                  deltaStr = ` (${sign}${delta.toFixed(dec)})`;
+                }
+              }
+
+              // 補間フラグがある場合は注釈を末尾に付ける（括弧ではない）
+              let interpolatedNote = '';
               let isInterpolated = false;
-              let refillType = 'none';
-
-              // 💡 💥 修正：新設した直下のカスタムプロパティから安全に給水判定を取得
-              if (fieldKey === 'water_level' && dataset.refillTypes) {
-                refillType = dataset.refillTypes[rIdx] || 'none';
-                isInterpolated = dataset.isInterpolatedArray ? dataset.isInterpolatedArray[rIdx] : false;
+              if (fieldKey === 'water_level' && dataset.isInterpolatedArray) {
+                isInterpolated = dataset.isInterpolatedArray[rIdx];
               } else {
-                isInterpolated = fixedReports24[rIdx]?._isInterpolated?.[fieldKey];
+                isInterpolated = !!fixedReports24[rIdx]?._isInterpolated?.[fieldKey];
               }
+              if (isInterpolated) interpolatedNote = ' ※自動補間';
 
-              if (isInterpolated) suffix = " (※自動補間)";
-
-              // 給水アクションまたは通常しきい値アラートのアイコン判定
-              let prefix = "";
-              if (refillType === 'before') {
-                prefix = "⛽[給水開始] ";
-              } else if (refillType === 'after') {
-                prefix = "🏁[給水終了] ";
-              } else {
-                // 給水イベント以外の場合のみ、通常のアラート判定を走らせる
-                const itemStatus = dataset.itemStatuses[rIdx];
-                if (itemStatus === 'danger') prefix = "🚨[危険] ";
-                if (itemStatus === 'warning') prefix = "⚠️[警告] ";
-              }
-
-              return `${prefix}${datasetLabel}: ${rawData.toFixed(1)} ${unit}${suffix}`;
+              return `${datasetLabel}: ${valueStr}${deltaStr}${interpolatedNote}`;
             }
           },
           titleFont: { size: 15, weight: 'bold' },
