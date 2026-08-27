@@ -601,11 +601,11 @@ class HydroManager:
                 if tds_level <= tds_level_vlow and water_level >= 50:
                     self.logger.warning(f"Mid-day boost conditions met! (TDS {tds_level} <= {tds_level_vlow}). Triggering 50% duration fertilization.")
 
-                    # 通常設定の半分の秒数を計算（最低1秒保証）
-                    f1_sec = max(1, int(self.schedule.get('fert1_seconds', 10)) // 2)
-                    f2_sec = max(1, int(self.schedule.get('fert2_seconds', 10)) // 2)
-                    f3_sec = max(1, int(self.schedule.get('fert3_seconds', 10)) // 2)
-                    f4_sec = max(1, int(self.schedule.get('fert4_seconds', 10)) // 2)
+                    # 通常設定の半分の秒数を計算（0秒設定は0秒のまま）
+                    f1_sec = max(0, int(self.schedule.get('fert1_seconds', 10)) // 2)
+                    f2_sec = max(0, int(self.schedule.get('fert2_seconds', 10)) // 2)
+                    f3_sec = max(0, int(self.schedule.get('fert3_seconds', 10)) // 2)
+                    f4_sec = max(0, int(self.schedule.get('fert4_seconds', 10)) // 2)
 
                     # 共通化したシークエンス関数を、独立したバックグラウンドタスクとして起動！
                     self.socketio.start_background_task(self._fertilize_sequence_task, f1_sec, f2_sec, f3_sec, f4_sec)
@@ -1168,11 +1168,11 @@ class HydroManager:
 
         try:
             # 1. スケジュール設定から各液肥ポンプの秒数を取得
-            # 通常設定の半分の秒数を計算（最低1秒保証）
-            f1_sec = max(1, int(self.schedule.get('fert1_seconds', 10)) // 2)
-            f2_sec = max(1, int(self.schedule.get('fert2_seconds', 10)) // 2)
-            f3_sec = max(1, int(self.schedule.get('fert3_seconds', 10)) // 2)
-            f4_sec = max(1, int(self.schedule.get('fert4_seconds', 10)) // 2)
+            # 通常設定の半分の秒数を計算（0秒設定は0秒のまま）
+            f1_sec = max(0, int(self.schedule.get('fert1_seconds', 10)) // 2)
+            f2_sec = max(0, int(self.schedule.get('fert2_seconds', 10)) // 2)
+            f3_sec = max(0, int(self.schedule.get('fert3_seconds', 10)) // 2)
+            f4_sec = max(0, int(self.schedule.get('fert4_seconds', 10)) // 2)
 
             self.logger.info(f"Force fertilize: Fert1={f1_sec}s, Fert2={f2_sec}s, Fert3={f3_sec}s, Fert4={f4_sec}s")
 
@@ -1292,13 +1292,13 @@ class HydroManager:
                     water_temp = self.sensors.read_water_temp()
                     tds_level = self.sensors.read_tds(water_temp)
                     
-                    # 閾値評価ロジック(evaluate)を部分再現して very_high をチェック
+                    # 閾値評価ロジック(evaluate)を部分再現して high をチェック
                     limit = self.db.get_sensor_limit() or {}
-                    vhigh_limit = limit.get('tds_level_vhigh')
+                    high_limit = limit.get('tds_level_high')
                     
-                    if tds_level is not None and vhigh_limit is not None and tds_level > float(vhigh_limit):
-                        # 濃度が危険値（very_high）を超えている場合は水のみ補充
-                        self.logger.warning(f"Fertilizer: EC is VERY HIGH ({tds_level}). Skipping fertilizer for safety.")
+                    if tds_level is not None and high_limit is not None and tds_level > float(high_limit):
+                        # 濃度がやや高い(high)を超えている場合は水のみ補充
+                        self.logger.warning(f"Fertilizer: EC is HIGH ({tds_level}). Skipping fertilizer for safety.")
                         request['is_auto_fertilize'] = False
                     else:
                         # 濃度が安全圏、かつ今日初めての自動補充なら「追肥フラグ」をONに！

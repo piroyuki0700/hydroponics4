@@ -7,7 +7,7 @@ load_dotenv()
 
 class Config:
     # バージョン情報
-    APP_VERSION = '2026/08/18'
+    APP_VERSION = '2026/08/27'
     GITHUB_URL = os.getenv('GITHUB_URL', 'https://github.com/username/repository')
     GITHUB_REPO_NAME = os.getenv('GITHUB_REPO_NAME', 'repository')
 
@@ -22,7 +22,7 @@ class Config:
     DB_PASSWORD = os.getenv('DB_PASSWORD')
 
     # Discord Webhook URL
-    DISCORD_WEBHOOK_URL   = os.getenv('DISCORD_WEBHOOK_URL')
+    DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL')
 
     # Directories
     LOG_DIR = 'log'
