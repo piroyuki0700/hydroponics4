@@ -521,7 +521,7 @@ function setValueSensorLimit(data)
     "air_temp_vlow", "air_temp_low", "air_temp_high", "air_temp_vhigh",
     "humidity_vlow", "humidity_low",
     "water_temp_vlow", "water_temp_low", "water_temp_high", "water_temp_vhigh",
-    "water_level_vlow", "water_level_low",
+    "water_level_vlow", "water_level_low", "water_level_high",
     "tds_level_vlow", "tds_level_low", "tds_level_high", "tds_level_vhigh",
     "cpu_temp_high", "cpu_temp_vhigh"
   ];

@@ -123,6 +123,7 @@ CREATE TABLE `setting_sensor_limit` (
   -- 水位 (Water Level %)
   `water_level_vlow` DECIMAL(4,1) DEFAULT 10.0,
   `water_level_low`  DECIMAL(4,1) DEFAULT 30.0,
+  `water_level_high` DECIMAL(4,1) DEFAULT 110.0,
 
   -- 肥料濃度 (EC値: mS/cm) 
   -- DECIMAL(4,2) により 0.00 ～ 99.99 まで保持可能。水耕栽培(通常1.0~2.5)に最適。

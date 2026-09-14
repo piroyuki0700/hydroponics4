@@ -1246,12 +1246,14 @@ class HydroManager:
         forced_refill_active = bool(int(self.schedule.get('forced_refill_active', 0)))
         forced_refill_hour = int(self.schedule.get('forced_refill_hour', 0))
         current_hour = datetime.now().hour
-        if (trigger == 'schedule' and forced_refill_active and forced_refill_hour == current_hour):
-            self.logger.info("Forced refill is active and current hour matches. Treating as forced refill.")
-            trigger = 'schedule_forced'
+        if trigger == 'schedule' and forced_refill_active and forced_refill_hour == current_hour:
+            water_level = self.sensors.read_water_level()
+            if water_level is None or water_level < 90:
+                self.logger.info("Forced refill is active and current hour matches. Treating as forced refill.")
+                trigger = 'schedule_forced'
 
         if trigger == 'manual_forced' or trigger == 'schedule_forced':
-            # 'manual_forced' オプション：上限スイッチが感知（満水ではない）場合に補充
+            # 強制：下限スイッチの状態に関係なく補充を行う
             perform_refill = not self.device.float_main_top.is_active
         else:
             # 通常：下限スイッチが感知（水切れしている）場合に補充
