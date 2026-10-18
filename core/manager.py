@@ -627,11 +627,13 @@ class HydroManager:
 
     def compare_last_report(self, report):
         last_report = self.db.get_latest_report()
-        if (last_report['water_level'] is not None and report['water_level'] is not None and
-            last_report['water_level'] - report['water_level'] >= self.WATER_LEVEL_DIF_MAX):
-            self.logger.warning(f"Water level changed significantly: {last_report['water_level']}% -> {report['water_level']}%")
+        last_water_level = last_report.get('water_level')
+        water_level = report.get('water_level')
+        if (last_water_level is not None and water_level is not None and
+            last_water_level - water_level >= self.WATER_LEVEL_DIF_MAX):
+            self.logger.warning(f"Water level changed significantly: {last_water_level}% -> {water_level}%")
             self.send_emergency_if_enabled(
-                f"【警報】水位が急激に変化しました: {last_report['water_level']}% -> {report['water_level']}%。\n"
+                f"【警報】水位が急激に変化しました: {last_water_level}% -> {water_level}%。\n"
                 "配管の破損や漏水の可能性があります。至急現場を確認してください。"
             )
 
