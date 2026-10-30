@@ -57,7 +57,7 @@ class HydroCamera:
         if self.has_fswebcam:
             # -d: デバイス指定, -r: 解像度, --no-banner: 下部の黒帯インフォを消す
             # 💡 もし写真が暗い場合は、"--skip" "5" を追加すると、5フレーム分空読み（露出調整）してから撮影してくれます。
-            cmd = ["fswebcam", "-d", self.device_path, "-r", "1280x720", "--skip", "2", "--no-banner", filepath]
+            cmd = ["fswebcam", "-d", self.device_path, "-r", "1280x720", "--skip", "4", "--no-banner", filepath]
             
         # 2. ffmpegしか使えない場合（Ubuntuなどでのバックアップモード）
         elif self.has_ffmpeg:
