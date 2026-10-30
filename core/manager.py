@@ -417,16 +417,19 @@ class HydroManager:
             self.schedule_timer.cancel()
             self.schedule_timer = None
 
+        now = datetime.now()
         status = {}
-        report = self.db.get_latest_report()
-        if len(report):
-            status = self.evaluate(report)
-            self.device.update_led(status['total_status'])
+        if self._determine_mode(now) == "Night":
+            self.device.update_led('darkblue')
         else:
-            self.device.update_led('white')
+            report = self.db.get_latest_report()
+            if len(report):
+                status = self.evaluate(report)
+                self.device.update_led(status['total_status'])
+            else:
+                self.device.update_led('white')
 
         """現在時刻から次に実行すべき『分』と『関数』を計算してタイマーをセット"""
-        now = datetime.now()
         m = now.minute
 
         # 1. 次の目標の「分」と、その時に実行したい「関数（処理）」のペアを決定

@@ -239,6 +239,7 @@ class HydroDevices:
         # 標準的なGRB配列の場合の割り当て例：(G, R, B)
         color_map = {
             'blue':     (0, 0, 50),
+            'darkblue': (0, 0, 20),
             'green':    (50, 0, 0),   # GRBチップならこれで緑になります
             'success':  (50, 0, 0),
             'yellow':   (32, 32, 0),
